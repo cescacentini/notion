@@ -37,3 +37,16 @@ body {
 .card-back {
   transform: rotateY(180deg);
 }
+
+@keyframes dog-bob {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-3px); }
+}
+
+@keyframes tail-wag {
+  0%, 100% { transform: rotate(0deg); transform-origin: bottom left; }
+  50% { transform: rotate(25deg); transform-origin: bottom left; }
+}
+
+.dog-walk { animation: dog-bob 0.45s ease-in-out infinite; }
+.dog-tail { animation: tail-wag 0.45s ease-in-out infinite; }

@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import type { DeckStat, Flashcard } from "@/lib/notion";
+import { SOURCE_ICON } from "@/components/FlashcardsCard";
 import Heatmap from "./Heatmap";
 import Forecast from "./Forecast";
 
@@ -40,6 +41,17 @@ export default function Dashboard({
     if (!query) return decks;
     return decks.filter((d) => d.name.toLowerCase().includes(query));
   }, [decks, query]);
+
+  const groupedDecks = useMemo(() => {
+    const order: string[] = [];
+    const groups = new Map<string, DeckStat[]>();
+    for (const deck of filteredDecks) {
+      const key = deck.source ?? "Other";
+      if (!groups.has(key)) { order.push(key); groups.set(key, []); }
+      groups.get(key)!.push(deck);
+    }
+    return order.map((key) => ({ source: key, decks: groups.get(key)! }));
+  }, [filteredDecks]);
 
   const matchingCards = useMemo(() => {
     if (!query) return [];
@@ -192,43 +204,54 @@ export default function Dashboard({
         </button>
       )}
 
-      {/* Deck list */}
-      <div className="flex flex-col gap-1">
+      {/* Deck list — grouped by source */}
+      <div className="flex flex-col gap-4">
         {!query && (
-          <p className="text-xs text-neutral-400 uppercase tracking-wider font-medium mb-1">Decks</p>
+          <p className="text-xs text-neutral-400 uppercase tracking-wider font-medium">Decks</p>
         )}
         {filteredDecks.length === 0 && (
           <p className="text-sm text-neutral-400 py-4 text-center">
             {query ? "No decks match your search." : "No decks yet. Create one to get started."}
           </p>
         )}
-        <div className="flex flex-col divide-y divide-neutral-100 border border-neutral-100 rounded-xl overflow-hidden">
-          {filteredDecks.map((deck) => (
-            <button
-              key={deck.id || deck.name}
-              onClick={() => router.push(`/study?resource=${encodeURIComponent(deck.id)}&name=${encodeURIComponent(deck.name)}`)}
-              disabled={deck.due === 0}
-              className="flex items-center justify-between px-5 py-4 bg-white hover:bg-neutral-50 transition-colors disabled:opacity-40 disabled:cursor-default text-left"
-            >
-              <div>
-                <p className="font-medium text-sm text-neutral-900">{deck.name}</p>
-                <p className="text-xs text-neutral-400 mt-0.5">{deck.total} card{deck.total !== 1 ? "s" : ""}</p>
-              </div>
-              <div className="flex items-center gap-3">
-                {deck.due > 0 ? (
-                  <span className="text-sm font-semibold text-neutral-900 bg-neutral-100 rounded-full px-2.5 py-0.5">
-                    {deck.due} due
-                  </span>
-                ) : (
-                  <span className="text-xs text-neutral-400">Done</span>
-                )}
-                <svg className="text-neutral-300" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                  <path d="M5 12h14M12 5l7 7-7 7" />
-                </svg>
-              </div>
-            </button>
-          ))}
-        </div>
+        {groupedDecks.map(({ source, decks }) => (
+          <div key={source} className="flex flex-col gap-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className="text-sm leading-none">{SOURCE_ICON[source] ?? "·"}</span>
+              <p className="text-xs text-neutral-400 uppercase tracking-wider font-medium">{source}</p>
+            </div>
+            <div className="flex flex-col divide-y divide-neutral-100 border border-neutral-100 rounded-xl overflow-hidden">
+              {decks.map((deck) => (
+                <button
+                  key={deck.id || deck.name}
+                  onClick={() => router.push(`/study?resource=${encodeURIComponent(deck.id)}&name=${encodeURIComponent(deck.name)}`)}
+                  disabled={deck.due === 0}
+                  className="flex items-center justify-between px-5 py-4 bg-white hover:bg-neutral-50 transition-colors disabled:opacity-40 disabled:cursor-default text-left"
+                >
+                  <div>
+                    <p className="font-medium text-sm text-neutral-900">{deck.name}</p>
+                    <p className="text-xs text-neutral-400 mt-0.5">
+                      {deck.total} card{deck.total !== 1 ? "s" : ""}
+                      {deck.topics.length > 0 && ` · ${deck.topics.join(", ")}`}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {deck.due > 0 ? (
+                      <span className="text-sm font-semibold text-neutral-900 bg-neutral-100 rounded-full px-2.5 py-0.5">
+                        {deck.due} due
+                      </span>
+                    ) : (
+                      <span className="text-xs text-neutral-400">Done</span>
+                    )}
+                    <svg className="text-neutral-300" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M5 12h14M12 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* New deck modal */}

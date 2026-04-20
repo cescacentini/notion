@@ -5,6 +5,81 @@ import { useRouter } from "next/navigation";
 import { Flashcard as FlashcardType } from "@/lib/notion";
 import FlashcardView from "./FlashcardView";
 
+function getRetentionPct(card: FlashcardType): number | null {
+  if (card.repetitions === 0 || !card.lastReview || card.interval === 0) return null;
+  const daysSince =
+    (Date.now() - new Date(card.lastReview).getTime()) / 86_400_000;
+  return Math.min(99, Math.round(Math.pow(0.9, daysSince / card.interval) * 100));
+}
+
+function CardInfoPanel({ card, onClose }: { card: FlashcardType; onClose: () => void }) {
+  const retention = getRetentionPct(card);
+  const isNew = card.repetitions === 0;
+
+  const rows: { label: string; value: string }[] = [
+    { label: "Deck", value: card.deck || "—" },
+    { label: "Ease factor", value: card.easeFactor.toFixed(2) },
+    { label: "Interval", value: card.interval > 0 ? `${card.interval} day${card.interval !== 1 ? "s" : ""}` : "—" },
+    { label: "Reviews", value: String(card.repetitions) },
+    { label: "Last review", value: card.lastReview ? new Date(card.lastReview).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—" },
+    { label: "Next review", value: card.nextReview ? new Date(card.nextReview).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" }) : "—" },
+  ];
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end" onClick={onClose}>
+      <div
+        className="w-full bg-white rounded-t-2xl shadow-xl border border-neutral-100 px-5 pt-4 pb-8 max-w-xl mx-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Handle */}
+        <div className="w-10 h-1 bg-neutral-200 rounded-full mx-auto mb-5" />
+
+        {/* Retention */}
+        <div className="mb-5">
+          {isNew ? (
+            <div className="flex items-baseline gap-2">
+              <span className="text-3xl font-semibold">New</span>
+              <span className="text-sm text-neutral-400">card — not yet reviewed</span>
+            </div>
+          ) : retention !== null ? (
+            <>
+              <div className="flex items-baseline gap-1.5 mb-1">
+                <span className="text-3xl font-semibold tabular-nums">{retention}%</span>
+                <span className="text-sm text-neutral-400">estimated retention</span>
+              </div>
+              <div className="h-2 bg-neutral-100 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${
+                    retention >= 80 ? "bg-neutral-900" : retention >= 50 ? "bg-neutral-500" : "bg-neutral-300"
+                  }`}
+                  style={{ width: `${retention}%` }}
+                />
+              </div>
+            </>
+          ) : null}
+        </div>
+
+        {/* Stats table */}
+        <div className="divide-y divide-neutral-100 border border-neutral-100 rounded-xl overflow-hidden">
+          {rows.map(({ label, value }) => (
+            <div key={label} className="flex justify-between items-center px-4 py-2.5 bg-white">
+              <span className="text-xs text-neutral-400">{label}</span>
+              <span className="text-sm font-medium text-neutral-900">{value}</span>
+            </div>
+          ))}
+        </div>
+
+        <button
+          onClick={onClose}
+          className="mt-4 w-full py-3 text-sm border border-neutral-200 rounded-xl hover:bg-neutral-50 transition-colors"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}
+
 type SessionState = "loading" | "ready" | "empty" | "done" | "error";
 
 interface Props {
@@ -20,6 +95,7 @@ export default function StudySession({ resource, deckLabel }: Props) {
   const [flipped, setFlipped] = useState(false);
   const [rating, setRating] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
+  const [showInfo, setShowInfo] = useState(false);
 
   const label = deckLabel ?? (resource && resource !== "all" ? "Deck" : "All decks");
 
@@ -99,13 +175,13 @@ export default function StudySession({ resource, deckLabel }: Props) {
 
   const backBtn = (
     <button
-      onClick={() => router.push("/flashcards")}
+      onClick={() => router.push("/library")}
       className="flex items-center gap-1.5 text-sm text-neutral-400 hover:text-neutral-700 transition-colors"
     >
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
         <path d="M19 12H5M12 19l-7-7 7-7" />
       </svg>
-      Decks
+      Library
     </button>
   );
 
@@ -193,13 +269,28 @@ export default function StudySession({ resource, deckLabel }: Props) {
 
   return (
     <div className="h-full flex flex-col">
+      {/* Card info sheet */}
+      {showInfo && current && (
+        <CardInfoPanel card={current} onClose={() => setShowInfo(false)} />
+      )}
+
       {/* Header */}
       <header className="flex items-center justify-between px-5 py-4 border-b border-neutral-100">
         {backBtn}
         <span className="text-sm font-medium truncate max-w-[140px]">{label}</span>
-        <span className="text-sm text-neutral-400 w-14 text-right tabular-nums">
-          {total - index} left
-        </span>
+        <div className="flex items-center gap-3 w-14 justify-end">
+          <span className="text-sm text-neutral-400 tabular-nums">{total - index} left</span>
+          <button
+            onClick={() => setShowInfo(true)}
+            className="text-neutral-400 hover:text-neutral-700 transition-colors"
+            aria-label="Card info"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 16v-4M12 8h.01" />
+            </svg>
+          </button>
+        </div>
       </header>
 
       {/* Progress bar */}

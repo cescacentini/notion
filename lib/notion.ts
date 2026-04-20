@@ -1,10 +1,11 @@
 const NOTION_API_KEY = process.env.NOTION_API_KEY!;
 export const DATABASE_ID = process.env.NOTION_DATABASE_ID!;
-const HABITS_DB   = "6d92cf60-331c-48db-aeed-76c7e484336e";
-const TASKS_DB    = "1e3eea6c-05a6-4822-a7d1-f4b6cf80e8c8";
-const RESOURCES_DB = "7ba24a8b-3c1b-42eb-ab9e-e301040ac368";
-const SOCIAL_DB   = "85580ae9-1364-4e5f-a667-a2361cf25eb6";
-const PROJECTS_DB = "a4e81701-9642-4210-b0d3-e2b146f93155";
+export const HABITS_DB    = "6d92cf60-331c-48db-aeed-76c7e484336e";
+export const TASKS_DB     = "1e3eea6c-05a6-4822-a7d1-f4b6cf80e8c8";
+export const RESOURCES_DB = "7ba24a8b-3c1b-42eb-ab9e-e301040ac368";
+export const SOCIAL_DB    = "85580ae9-1364-4e5f-a667-a2361cf25eb6";
+export const PROJECTS_DB  = "a4e81701-9642-4210-b0d3-e2b146f93155";
+export const JOURNAL_DB   = "724df60e-48c9-454d-bebc-f66d15ea1813";
 
 const NOTION_VERSION = "2022-06-28";
 const BASE = "https://api.notion.com/v1";
@@ -46,7 +47,14 @@ export interface Flashcard {
   lastReview: string | null;
 }
 
-export interface DeckStat { id: string; name: string; total: number; due: number }
+export interface DeckStat {
+  id: string;
+  name: string;
+  total: number;
+  due: number;
+  source: string | null;
+  topics: string[];
+}
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function pageToFlashcard(page: any): Flashcard {
@@ -78,6 +86,24 @@ export async function getResourceTitles(ids: string[]): Promise<Record<string, s
   return Object.fromEntries(entries);
 }
 
+interface ResourceDetails { title: string; source: string | null; topics: string[] }
+
+async function getResourceDetails(ids: string[]): Promise<Record<string, ResourceDetails>> {
+  const unique = [...new Set(ids)];
+  const entries = await Promise.all(
+    unique.map(async (id) => {
+      const page = await notionFetch(`${BASE}/pages/${id}`);
+      const p = page.properties;
+      return [id, {
+        title:  extractText(p.Title?.title ?? p.Name?.title ?? []),
+        source: p.Source?.select?.name ?? null,
+        topics: p.Topic?.multi_select?.map((t: { name: string }) => t.name) ?? [],
+      }] as [string, ResourceDetails];
+    })
+  );
+  return Object.fromEntries(entries);
+}
+
 async function queryAllCards(filter?: object): Promise<Flashcard[]> {
   const cards: Flashcard[] = [];
   let cursor: string | undefined;
@@ -99,6 +125,23 @@ export async function getAllCards(): Promise<Flashcard[]> {
   return queryAllCards();
 }
 
+export async function getResourcesWithNoCards(): Promise<Resource[]> {
+  const resources = await getInProgressResources();
+  const checks = await Promise.all(
+    resources.map(async (r) => {
+      const data = await notionFetch(`${BASE}/databases/${DATABASE_ID}/query`, {
+        method: "POST",
+        body: JSON.stringify({
+          filter: { property: "Resources", relation: { contains: r.id } },
+          page_size: 1,
+        }),
+      });
+      return { resource: r, hasCards: data.results.length > 0 };
+    })
+  );
+  return checks.filter((c) => !c.hasCards).map((c) => c.resource);
+}
+
 export async function getDueCards(resourceId?: string): Promise<Flashcard[]> {
   const today = new Date().toISOString().split("T")[0];
   const dateFilter = {
@@ -114,8 +157,44 @@ export async function getDueCards(resourceId?: string): Promise<Flashcard[]> {
 }
 
 export async function getDueCount(): Promise<number> {
-  const cards = await getDueCards();
-  return cards.length;
+  const today = new Date().toISOString().split("T")[0];
+  const data = await notionFetch(`${BASE}/databases/${DATABASE_ID}/query`, {
+    method: "POST",
+    body: JSON.stringify({
+      filter: {
+        or: [
+          { property: "NextReview", date: { is_empty: true } },
+          { property: "NextReview", date: { on_or_before: today } },
+        ],
+      },
+      page_size: 100,
+    }),
+  });
+  return data.results.length; // capped at 100; exact for most users
+}
+
+export async function getRecentlyReviewed(limit = 10): Promise<Flashcard[]> {
+  const allCards = await getAllCards();
+  const reviewed = allCards
+    .filter((c) => c.lastReview)
+    .sort((a, b) => {
+      if (!a.lastReview || !b.lastReview) return 0;
+      return new Date(b.lastReview).getTime() - new Date(a.lastReview).getTime();
+    })
+    .slice(0, limit);
+  return reviewed;
+}
+
+export async function getPageContent(pageId: string): Promise<string[]> {
+  const data = await notionFetch(`${BASE}/blocks/${pageId}/children?page_size=100`);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data.results as any[])
+    .filter((b: any) => b[b.type]?.rich_text)
+    .map((b: any) => {
+      const richText = b[b.type].rich_text;
+      return richText?.map((t: { plain_text: string }) => t.plain_text).join("") ?? "";
+    })
+    .filter(Boolean);
 }
 
 export async function getDeckStats(): Promise<DeckStat[]> {
@@ -124,24 +203,25 @@ export async function getDeckStats(): Promise<DeckStat[]> {
 
   // Collect all unique resource IDs
   const allResourceIds = [...new Set(all.flatMap((c) => c.resourceIds))];
-  const titles = allResourceIds.length > 0 ? await getResourceTitles(allResourceIds) : {};
+  const details = allResourceIds.length > 0 ? await getResourceDetails(allResourceIds) : {};
 
   const map = new Map<string, DeckStat>();
 
-  const getOrCreate = (id: string, name: string) => {
-    if (!map.has(id)) map.set(id, { id, name, total: 0, due: 0 });
+  const getOrCreate = (id: string, name: string, source: string | null, topics: string[]) => {
+    if (!map.has(id)) map.set(id, { id, name, total: 0, due: 0, source, topics });
     return map.get(id)!;
   };
 
   for (const card of all) {
     const isDue = !card.nextReview || card.nextReview <= today;
     if (card.resourceIds.length === 0) {
-      const stat = getOrCreate("", "Uncategorized");
+      const stat = getOrCreate("", "Uncategorized", null, []);
       stat.total++;
       if (isDue) stat.due++;
     } else {
       for (const rid of card.resourceIds) {
-        const stat = getOrCreate(rid, titles[rid] ?? rid);
+        const d = details[rid];
+        const stat = getOrCreate(rid, d?.title ?? rid, d?.source ?? null, d?.topics ?? []);
         stat.total++;
         if (isDue) stat.due++;
       }
@@ -164,6 +244,29 @@ export async function updateCardSM2(
         Repetitions: { number: repetitions },
         NextReview: { date: { start: nextReview } },
         LastReview: { date: { start: new Date().toISOString().split("T")[0] } },
+      },
+    }),
+  });
+}
+
+export async function getResourceById(id: string): Promise<Resource> {
+  const page = await notionFetch(`${BASE}/pages/${id}`);
+  return pageToResource(page);
+}
+
+export async function createFlashcard(input: {
+  question: string;
+  answer: string;
+  resourceId: string;
+}): Promise<void> {
+  await notionFetch(`${BASE}/pages`, {
+    method: "POST",
+    body: JSON.stringify({
+      parent: { database_id: DATABASE_ID },
+      properties: {
+        Question:  { title: [{ text: { content: input.question } }] },
+        Answer:    { rich_text: [{ text: { content: input.answer } }] },
+        Resources: { relation: [{ id: input.resourceId }] },
       },
     }),
   });
@@ -262,8 +365,8 @@ function pageToTask(page: any): Task {
 export async function getTodayTasks(): Promise<Task[]> {
   const today = new Date().toISOString().split("T")[0];
 
-  const [doToday, overdue] = await Promise.all([
-    // Scheduled for today
+  const [doToday, dueToday, overdue] = await Promise.all([
+    // Scheduled for today (do date = today)
     notionFetch(`${BASE}/databases/${TASKS_DB}/query`, {
       method: "POST",
       body: JSON.stringify({
@@ -274,6 +377,19 @@ export async function getTodayTasks(): Promise<Task[]> {
           ],
         },
         page_size: 20,
+      }),
+    }),
+    // Due today (due date = today)
+    notionFetch(`${BASE}/databases/${TASKS_DB}/query`, {
+      method: "POST",
+      body: JSON.stringify({
+        filter: {
+          and: [
+            { property: "Due date", date: { equals: today } },
+            { property: "Done", status: { does_not_equal: "Done" } },
+          ],
+        },
+        page_size: 10,
       }),
     }),
     // Overdue (due date before today)
@@ -295,6 +411,9 @@ export async function getTodayTasks(): Promise<Task[]> {
   const seen = new Set<string>();
   const tasks: Task[] = [];
   for (const page of [...doToday.results, ...overdue.results]) {
+    if (!seen.has(page.id)) { seen.add(page.id); tasks.push(pageToTask(page)); }
+  }
+  for (const page of [...dueToday.results, ...overdue.results]) {
     if (!seen.has(page.id)) { seen.add(page.id); tasks.push(pageToTask(page)); }
   }
   return tasks;
@@ -343,6 +462,17 @@ export async function getInProgressResources(): Promise<Resource[]> {
   return data.results.map(pageToResource);
 }
 
+export async function getAllResources(): Promise<Resource[]> {
+  const data = await notionFetch(`${BASE}/databases/${RESOURCES_DB}/query`, {
+    method: "POST",
+    body: JSON.stringify({
+      sorts: [{ property: "Date added", direction: "descending" }],
+      page_size: 50,
+    }),
+  });
+  return data.results.map(pageToResource);
+}
+
 // ─── Social Posts ───────────────────────────────────────────────────────────
 
 export interface SocialPost {
@@ -366,7 +496,7 @@ export async function getTodaySocialPosts(): Promise<SocialPost[]> {
     const p = page.properties;
     return {
       id: page.id,
-      name: extractText(p.Title?.title ?? []),
+      name: extractText(p.Name?.title ?? p.Title?.title ?? []),
       status: p.Status?.status?.name ?? "",
       caption: extractText(p.Caption?.rich_text ?? []),
     };
@@ -381,6 +511,8 @@ export interface Project {
   status: string;
   totalTasks: number;
   doneTasks: number;
+  startDate: string | null;
+  endDate: string | null;
 }
 
 export async function getActiveProjects(): Promise<Project[]> {
@@ -398,13 +530,17 @@ export async function getActiveProjects(): Promise<Project[]> {
   });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const projects: Array<{ id: string; name: string; status: string; taskIds: string[] }> = data.results.map((page: any) => {
+  const projects: Array<{ id: string; name: string; status: string; taskIds: string[]; startDate: string | null; endDate: string | null }> = data.results.map((page: any) => {
     const p = page.properties;
+    // Try common property names for date ranges
+    const dateRange = p.Date?.date ?? p.Timeline?.date ?? p["Date range"]?.date ?? null;
     return {
       id: page.id,
       name: extractText(p.Name?.title ?? []),
       status: p.Status?.status?.name ?? "",
       taskIds: p.Tasks?.relation?.map((r: { id: string }) => r.id) ?? [],
+      startDate: dateRange?.start ?? null,
+      endDate: dateRange?.end ?? null,
     };
   });
 
@@ -427,9 +563,134 @@ export async function getActiveProjects(): Promise<Project[]> {
         });
         doneTasks = doneData.results.length;
       }
-      return { id: proj.id, name: proj.name, status: proj.status, totalTasks, doneTasks };
+      return { id: proj.id, name: proj.name, status: proj.status, totalTasks, doneTasks, startDate: proj.startDate, endDate: proj.endDate };
     })
   );
 
   return results;
+}
+
+export async function getProjectTasks(projectId: string): Promise<Task[]> {
+  const data = await notionFetch(`${BASE}/databases/${TASKS_DB}/query`, {
+    method: "POST",
+    body: JSON.stringify({
+      filter: {
+        property: "Projects",
+        relation: { contains: projectId },
+      },
+      sorts: [{ property: "Done", direction: "ascending" }],
+      page_size: 50,
+    }),
+  });
+  return data.results.map(pageToTask);
+}
+
+export async function getActiveProjectsCount(): Promise<number> {
+  const data = await notionFetch(`${BASE}/databases/${PROJECTS_DB}/query`, {
+    method: "POST",
+    body: JSON.stringify({
+      filter: {
+        or: [
+          { property: "Status", status: { equals: "In progress" } },
+          { property: "Status", status: { equals: "On Hold" } },
+        ],
+      },
+      page_size: 20,
+    }),
+  });
+  return data.results.length;
+}
+
+// ─── Journal ───────────────────────────────────────────────────────────────
+
+export interface JournalPage {
+  id: string;
+  date: string;
+}
+
+export async function getTodayJournalPage(): Promise<JournalPage | null> {
+  const today = new Date().toISOString().split("T")[0];
+  try {
+    const data = await notionFetch(`${BASE}/databases/${JOURNAL_DB}/query`, {
+      method: "POST",
+      body: JSON.stringify({
+        filter: { property: "Date", date: { equals: today } },
+        page_size: 1,
+      }),
+    });
+    if (!data.results.length) return null;
+    return { id: data.results[0].id, date: today };
+  } catch {
+    return null;
+  }
+}
+
+export async function getPageTextBlocks(pageId: string): Promise<string[]> {
+  const data = await notionFetch(`${BASE}/blocks/${pageId}/children?page_size=100`);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (data.results as any[]).flatMap((b) => {
+    const richText = b[b.type]?.rich_text as { plain_text: string }[] | undefined;
+    if (!richText) return [];
+    const text = extractText(richText);
+    return text ? [text] : [];
+  });
+}
+
+export async function appendImageBlock(pageId: string, fileUploadId: string): Promise<void> {
+  await notionFetch(`${BASE}/blocks/${pageId}/children`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      children: [{
+        type: "image",
+        image: {
+          type: "file_upload",
+          file_upload: { id: fileUploadId },
+        },
+      }],
+    }),
+  });
+}
+
+export async function appendJournalBlock(pageId: string, text: string): Promise<void> {
+  await notionFetch(`${BASE}/blocks/${pageId}/children`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      children: [{
+        object: "block",
+        type: "paragraph",
+        paragraph: {
+          rich_text: [{ type: "text", text: { content: text } }],
+        },
+      }],
+    }),
+  });
+}
+
+export interface NotionDatabase {
+  id: string;
+  title: string;
+  properties: Record<string, { type: string; name: string }>;
+}
+
+export async function getAllDatabases(): Promise<NotionDatabase[]> {
+  const dbs: NotionDatabase[] = [];
+  const dbIds = [HABITS_DB, TASKS_DB, RESOURCES_DB, SOCIAL_DB, PROJECTS_DB, JOURNAL_DB, DATABASE_ID];
+
+  for (const dbId of dbIds) {
+    try {
+      const schema = await notionFetch(`${BASE}/databases/${dbId}`);
+      const props: Record<string, { type: string; name: string }> = {};
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      for (const [key, val] of Object.entries(schema.properties as Record<string, { type: string; name: string }>)) {
+        props[key] = { type: val.type, name: val.name };
+      }
+      dbs.push({
+        id: dbId,
+        title: extractText(schema.title?.title ?? []),
+        properties: props,
+      });
+    } catch { /* skip */ }
+  }
+
+  return dbs;
 }

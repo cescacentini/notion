@@ -1,4 +1,4 @@
-import { getAllDatabases, DATABASE_ID, HABITS_DB, TASKS_DB, RESOURCES_DB, PROJECTS_DB, JOURNAL_DB } from "@/lib/notion";
+import { getAllDatabases, DATABASE_ID, HABITS_DB, TASKS_DB, RESOURCES_DB, PROJECTS_DB, JOURNAL_DB, SOCIAL_DB } from "@/lib/notion";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -7,8 +7,16 @@ function getNotionDbUrl(id: string): string {
   return `https://notion.so/${id.replace(/-/g, "")}`;
 }
 
-const DB_INFO: Record<string, { name: string; color: string; icon: React.ReactNode }> = {
-  [DATABASE_ID]: {
+interface DbInfo { name: string; color: string; icon: React.ReactNode }
+
+function buildDbInfoMap(): Map<string, DbInfo> {
+  const map = new Map<string, DbInfo>();
+
+  const add = (id: string | undefined, info: DbInfo) => {
+    if (id) map.set(id, info);
+  };
+
+  add(DATABASE_ID, {
     name: "Flashcards",
     color: "bg-orange-100 text-orange-700",
     icon: (
@@ -17,28 +25,8 @@ const DB_INFO: Record<string, { name: string; color: string; icon: React.ReactNo
         <path d="M2 10h20M7 3l5 3 5-3" />
       </svg>
     ),
-  },
-  [HABITS_DB]: {
-    name: "Habits",
-    color: "bg-green-100 text-green-700",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M9 12l2 2 4-4" />
-        <circle cx="12" cy="12" r="9" />
-      </svg>
-    ),
-  },
-  [TASKS_DB]: {
-    name: "Tasks",
-    color: "bg-blue-100 text-blue-700",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <rect x="3" y="4" width="18" height="18" rx="2" />
-        <path d="M9 12l2 2 4-4" />
-      </svg>
-    ),
-  },
-  [RESOURCES_DB]: {
+  });
+  add(RESOURCES_DB, {
     name: "Resources",
     color: "bg-purple-100 text-purple-700",
     icon: (
@@ -47,8 +35,28 @@ const DB_INFO: Record<string, { name: string; color: string; icon: React.ReactNo
         <path d="M14 2v6h6M16 13H8M16 17H8M10 9H8" />
       </svg>
     ),
-  },
-  [PROJECTS_DB]: {
+  });
+  add(HABITS_DB, {
+    name: "Habits",
+    color: "bg-green-100 text-green-700",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M9 12l2 2 4-4" />
+        <circle cx="12" cy="12" r="9" />
+      </svg>
+    ),
+  });
+  add(TASKS_DB, {
+    name: "Tasks",
+    color: "bg-blue-100 text-blue-700",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <rect x="3" y="4" width="18" height="18" rx="2" />
+        <path d="M9 12l2 2 4-4" />
+      </svg>
+    ),
+  });
+  add(PROJECTS_DB, {
     name: "Projects",
     color: "bg-yellow-100 text-yellow-700",
     icon: (
@@ -57,8 +65,8 @@ const DB_INFO: Record<string, { name: string; color: string; icon: React.ReactNo
         <rect x="3" y="14" width="7" height="7" /><rect x="14" y="14" width="7" height="7" />
       </svg>
     ),
-  },
-  [JOURNAL_DB]: {
+  });
+  add(JOURNAL_DB, {
     name: "Journal",
     color: "bg-pink-100 text-pink-700",
     icon: (
@@ -67,11 +75,27 @@ const DB_INFO: Record<string, { name: string; color: string; icon: React.ReactNo
         <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
       </svg>
     ),
-  },
-};
+  });
+  add(SOCIAL_DB, {
+    name: "Content",
+    color: "bg-rose-100 text-rose-700",
+    icon: (
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <circle cx="18" cy="5" r="3" /><circle cx="6" cy="12" r="3" /><circle cx="18" cy="19" r="3" />
+        <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+        <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+      </svg>
+    ),
+  });
+
+  return map;
+}
 
 export default async function FlowchartPage() {
-  const databases = await getAllDatabases();
+  const [databases, dbInfoMap] = await Promise.all([
+    getAllDatabases(),
+    Promise.resolve(buildDbInfoMap()),
+  ]);
 
   return (
     <div className="min-h-full max-w-xl mx-auto px-5 py-8 flex flex-col gap-6">
@@ -88,12 +112,13 @@ export default async function FlowchartPage() {
 
       <div className="grid grid-cols-2 gap-3">
         {databases.map((db) => {
-          const info = DB_INFO[db.id] || { name: db.title || "Database", color: "bg-neutral-100 text-neutral-700", icon: null };
+          const info = dbInfoMap.get(db.id) ?? {
+            name: db.title || "Database",
+            color: "bg-neutral-100 text-neutral-700",
+            icon: null,
+          };
           return (
-            <div
-              key={db.id}
-              className={`p-4 rounded-xl border border-neutral-100 ${info.color}`}
-            >
+            <div key={db.id} className={`p-4 rounded-xl border border-neutral-100 ${info.color}`}>
               <div className="flex items-center gap-2 mb-2">
                 {info.icon}
                 <span className="font-medium text-sm">{info.name}</span>

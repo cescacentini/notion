@@ -7,13 +7,13 @@ export interface HomeStatus {
   habits: { done: number; total: number } | null;
   tasks: number;
   flashcards: number;
-  journal: boolean;
   social: number;
   projects: number;
 }
 
-const ALL_SECTION_IDS = ["habits", "tasks", "flashcards", "journal", "social", "projects"] as const;
+const ALL_SECTION_IDS = ["habits", "tasks", "flashcards", "social", "projects"] as const;
 type SectionId = typeof ALL_SECTION_IDS[number];
+
 
 const SECTION_META: Record<SectionId, { label: string; href: string; icon: React.ReactNode }> = {
   habits: {
@@ -47,18 +47,6 @@ const SECTION_META: Record<SectionId, { label: string; href: string; icon: React
         <rect x="2" y="6" width="20" height="14" rx="2" />
         <path d="M2 10h20" />
         <path d="M7 3l5 3 5-3" />
-      </svg>
-    ),
-  },
-  journal: {
-    label: "Journal",
-    href: "/journal",
-    icon: (
-      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
-        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
-        <line x1="9" y1="7" x2="15" y2="7" />
-        <line x1="9" y1="11" x2="15" y2="11" />
       </svg>
     ),
   },
@@ -100,8 +88,6 @@ function badge(id: SectionId, status: HomeStatus): { text: string; alert: boolea
     case "flashcards":
       if (!status.flashcards) return null;
       return { text: String(status.flashcards), alert: true };
-    case "journal":
-      return status.journal ? { text: "✓", alert: false } : null;
     case "social":
       if (!status.social) return null;
       return { text: String(status.social), alert: false };
@@ -132,11 +118,22 @@ function savePrefs(prefs: Prefs) {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(prefs)); } catch { /* ignore */ }
 }
 
-export default function HomeHub({ status }: { status: HomeStatus }) {
-  const [prefs, setPrefs] = useState<Prefs>({ order: [...ALL_SECTION_IDS], hidden: [] });
+export default function HomeHub({ status, available }: { status: HomeStatus; available: SectionId[] }) {
+  const defaultOrder = ALL_SECTION_IDS.filter((id) => available.includes(id));
+  const [prefs, setPrefs] = useState<Prefs>({ order: defaultOrder, hidden: [] });
   const [customize, setCustomize] = useState(false);
 
-  useEffect(() => { setPrefs(loadPrefs()); }, []);
+  useEffect(() => {
+    const saved = loadPrefs();
+    // Filter saved order to only include currently available sections
+    const filteredOrder = saved.order.filter((id) => available.includes(id));
+    // Add any newly available sections not in saved prefs
+    for (const id of available) {
+      if (!filteredOrder.includes(id)) filteredOrder.push(id);
+    }
+    setPrefs({ order: filteredOrder, hidden: saved.hidden });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function updatePrefs(next: Prefs) {
     setPrefs(next);

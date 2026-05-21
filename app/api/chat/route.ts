@@ -8,18 +8,25 @@ Be concise and clear. Use examples when helpful.`;
 
 export async function POST(req: NextRequest) {
   try {
-    const { message, topic } = await req.json();
-    
+    const { message, topic, cardQuestion, cardAnswer } = await req.json();
+
     if (!message?.trim()) {
       return NextResponse.json({ error: "Message required" }, { status: 400 });
     }
 
-    const contextPrompt = topic 
-      ? `The user is studying "${topic}". Answer their question based on this context.` 
-      : "Answer the user's question helpfully.";
+    let contextPrompt = topic
+      ? `The user is studying "${topic}".`
+      : "The user is reviewing flashcards.";
+    if (cardQuestion) {
+      contextPrompt += ` The current card asks: "${cardQuestion}"`;
+      if (cardAnswer) contextPrompt += ` The answer is: "${cardAnswer}"`;
+      contextPrompt += `. Help the user understand this concept.`;
+    } else {
+      contextPrompt += ` Answer their question helpfully.`;
+    }
 
     const response = await anthropic.messages.create({
-      model: "claude-haiku-4-20250501",
+      model: "claude-haiku-4-5-20251001",
       max_tokens: 512,
       system: `${SYSTEM_PROMPT}\n\n${contextPrompt}`,
       messages: [{ role: "user", content: message }],

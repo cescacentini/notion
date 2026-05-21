@@ -1,9 +1,137 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Flashcard as FlashcardType } from "@/lib/notion";
 import FlashcardView from "./FlashcardView";
+
+interface ChatMessage { role: "user" | "assistant"; text: string }
+
+function AiChatPanel({
+  card,
+  onClose,
+}: {
+  card: FlashcardType;
+  onClose: () => void;
+}) {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  async function send(text: string) {
+    if (!text.trim() || loading) return;
+    const userMsg: ChatMessage = { role: "user", text };
+    setMessages((m) => [...m, userMsg]);
+    setInput("");
+    setLoading(true);
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: text,
+          topic: card.deck,
+          cardQuestion: card.question,
+          cardAnswer: card.answer,
+        }),
+      });
+      const data = await res.json();
+      setMessages((m) => [...m, { role: "assistant", text: data.answer ?? data.error ?? "Error" }]);
+    } catch {
+      setMessages((m) => [...m, { role: "assistant", text: "Something went wrong." }]);
+    } finally {
+      setLoading(false);
+      setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end" onClick={onClose}>
+      <div
+        className="w-full bg-white rounded-t-2xl shadow-xl border-t border-neutral-100 flex flex-col max-h-[80vh] max-w-xl mx-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-neutral-100 flex-shrink-0">
+          <div className="w-10 h-1 bg-neutral-200 rounded-full absolute left-1/2 -translate-x-1/2 top-3" />
+          <span className="text-sm font-semibold mt-2">Ask AI</span>
+          <button onClick={onClose} className="text-neutral-400 hover:text-neutral-700 mt-2">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Quick prompts (only before first message) */}
+        {messages.length === 0 && (
+          <div className="px-4 pt-3 pb-1 flex flex-wrap gap-2 flex-shrink-0">
+            {["Explain this to me", "Give me an example", "Why does this matter?"].map((q) => (
+              <button
+                key={q}
+                onClick={() => send(q)}
+                className="text-xs px-3 py-1.5 rounded-full border border-neutral-200 hover:border-neutral-400 transition-colors"
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Messages */}
+        <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col gap-3 min-h-0">
+          {messages.map((m, i) => (
+            <div key={i} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
+              <div
+                className={`max-w-[85%] rounded-2xl px-3.5 py-2 text-sm leading-relaxed ${
+                  m.role === "user"
+                    ? "bg-neutral-900 text-white rounded-br-sm"
+                    : "bg-neutral-100 text-neutral-900 rounded-bl-sm"
+                }`}
+              >
+                {m.text}
+              </div>
+            </div>
+          ))}
+          {loading && (
+            <div className="flex justify-start">
+              <div className="bg-neutral-100 rounded-2xl rounded-bl-sm px-4 py-2.5">
+                <span className="flex gap-1">
+                  {[0, 1, 2].map((i) => (
+                    <span
+                      key={i}
+                      className="w-1.5 h-1.5 bg-neutral-400 rounded-full animate-bounce"
+                      style={{ animationDelay: `${i * 0.15}s` }}
+                    />
+                  ))}
+                </span>
+              </div>
+            </div>
+          )}
+          <div ref={bottomRef} />
+        </div>
+
+        {/* Input */}
+        <div className="px-4 pb-6 pt-2 flex gap-2 flex-shrink-0 border-t border-neutral-100">
+          <input
+            className="flex-1 text-sm border border-neutral-200 rounded-xl px-3.5 py-2.5 focus:outline-none focus:border-neutral-400"
+            placeholder="Ask anything about this card…"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(input); } }}
+            autoFocus
+          />
+          <button
+            onClick={() => send(input)}
+            disabled={!input.trim() || loading}
+            className="px-4 py-2.5 bg-neutral-900 text-white text-sm rounded-xl disabled:opacity-40 hover:bg-neutral-800 transition-colors"
+          >
+            Send
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function getRetentionPct(card: FlashcardType): number | null {
   if (card.repetitions === 0 || !card.lastReview || card.interval === 0) return null;
@@ -96,6 +224,7 @@ export default function StudySession({ resource, deckLabel }: Props) {
   const [rating, setRating] = useState<number | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
   const [showInfo, setShowInfo] = useState(false);
+  const [showAi, setShowAi] = useState(false);
 
   const label = deckLabel ?? (resource && resource !== "all" ? "Deck" : "All decks");
 
@@ -273,6 +402,10 @@ export default function StudySession({ resource, deckLabel }: Props) {
       {showInfo && current && (
         <CardInfoPanel card={current} onClose={() => setShowInfo(false)} />
       )}
+      {/* AI chat sheet */}
+      {showAi && current && (
+        <AiChatPanel card={current} onClose={() => setShowAi(false)} />
+      )}
 
       {/* Header */}
       <header className="flex items-center justify-between px-5 py-4 border-b border-neutral-100">
@@ -316,9 +449,18 @@ export default function StudySession({ resource, deckLabel }: Props) {
           flipped ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >
-        <p className="text-xs text-neutral-400 text-center mb-3">
-          How well did you know this?
-        </p>
+        <div className="flex items-center justify-between max-w-md mx-auto mb-3">
+          <p className="text-xs text-neutral-400">How well did you know this?</p>
+          <button
+            onClick={() => setShowAi(true)}
+            className="flex items-center gap-1 text-xs text-neutral-400 hover:text-neutral-700 transition-colors"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z" />
+            </svg>
+            Ask AI
+          </button>
+        </div>
         <div className="grid grid-cols-4 gap-2 max-w-md mx-auto">
           {(
             [

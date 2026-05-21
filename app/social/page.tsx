@@ -5,7 +5,12 @@ import Link from "next/link";
 export const dynamic = "force-dynamic";
 
 export default async function SocialPage() {
-  const posts = await getTodaySocialPosts();
+  let posts: Awaited<ReturnType<typeof getTodaySocialPosts>> = [];
+  try {
+    posts = await getTodaySocialPosts();
+  } catch {
+    // DB not shared with integration or not configured
+  }
   return (
     <div className="min-h-full max-w-xl mx-auto px-5 py-8 flex flex-col gap-6">
       <div className="flex items-center gap-3">

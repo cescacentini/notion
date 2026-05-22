@@ -2,13 +2,13 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Daily Dashboard",
-  description: "Notion-powered daily dashboard",
+  title: "notionflashcards",
+  description: "Your Notion-powered knowledge system",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "Dashboard",
+    title: "notionflashcards",
   },
   icons: {
     icon: "/icon.svg",

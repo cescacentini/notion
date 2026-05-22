@@ -1,7 +1,7 @@
 {
-  "name": "Daily Dashboard",
-  "short_name": "Dashboard",
-  "description": "Notion-powered daily dashboard with habits, tasks, flashcards and more",
+  "name": "notionflashcards",
+  "short_name": "notionflashcards",
+  "description": "Your Notion-powered knowledge system",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",

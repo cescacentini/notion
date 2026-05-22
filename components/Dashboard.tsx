@@ -9,8 +9,11 @@ import Forecast from "./Forecast";
 
 interface ForecastDay { date: string; label: string; count: number }
 
+type ViewMode = "topics" | "resources";
+
 interface Props {
   decks: DeckStat[];
+  tagStats: DeckStat[];
   totalDue: number;
   totalReviewed: number;
   streak: number;
@@ -21,6 +24,7 @@ interface Props {
 
 export default function Dashboard({
   decks,
+  tagStats,
   totalDue,
   totalReviewed,
   streak,
@@ -30,12 +34,14 @@ export default function Dashboard({
 }: Props) {
   const router = useRouter();
   const [search, setSearch] = useState("");
-  const [showNewDeck, setShowNewDeck] = useState(false);
-  const [newDeckName, setNewDeckName] = useState("");
-  const [creating, setCreating] = useState(false);
-  const [createError, setCreateError] = useState("");
+  const [view, setView] = useState<ViewMode>("topics");
 
   const query = search.trim().toLowerCase();
+
+  const filteredTags = useMemo(() => {
+    if (!query) return tagStats;
+    return tagStats.filter((d) => d.name.toLowerCase().includes(query));
+  }, [tagStats, query]);
 
   const filteredDecks = useMemo(() => {
     if (!query) return decks;
@@ -62,28 +68,6 @@ export default function Dashboard({
     );
   }, [allCards, query]);
 
-  async function handleCreateDeck(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newDeckName.trim()) return;
-    setCreating(true);
-    setCreateError("");
-    try {
-      const res = await fetch("/api/decks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newDeckName.trim() }),
-      });
-      if (!res.ok) throw new Error("Failed");
-      setShowNewDeck(false);
-      setNewDeckName("");
-      router.refresh();
-    } catch {
-      setCreateError("Could not create deck. Try again.");
-    } finally {
-      setCreating(false);
-    }
-  }
-
   return (
     <div className="min-h-full max-w-xl mx-auto px-5 py-8 flex flex-col gap-6">
 
@@ -97,12 +81,21 @@ export default function Dashboard({
           </a>
           <h1 className="text-xl font-semibold tracking-tight">Flashcards</h1>
         </div>
-        <button
-          onClick={() => setShowNewDeck(true)}
-          className="text-sm px-3 py-1.5 border border-neutral-200 rounded-md hover:bg-neutral-50 transition-colors"
-        >
-          + New deck
-        </button>
+        {/* View toggle */}
+        <div className="flex items-center bg-neutral-100 rounded-lg p-0.5 text-xs font-medium">
+          <button
+            onClick={() => setView("topics")}
+            className={`px-3 py-1.5 rounded-md transition-colors ${view === "topics" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700"}`}
+          >
+            Topics
+          </button>
+          <button
+            onClick={() => setView("resources")}
+            className={`px-3 py-1.5 rounded-md transition-colors ${view === "resources" ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500 hover:text-neutral-700"}`}
+          >
+            Resources
+          </button>
+        </div>
       </div>
 
       {/* Stats row */}
@@ -204,92 +197,96 @@ export default function Dashboard({
         </button>
       )}
 
-      {/* Deck list — grouped by source */}
-      <div className="flex flex-col gap-4">
-        {!query && (
-          <p className="text-xs text-neutral-400 uppercase tracking-wider font-medium">Decks</p>
-        )}
-        {filteredDecks.length === 0 && (
-          <p className="text-sm text-neutral-400 py-4 text-center">
-            {query ? "No decks match your search." : "No decks yet. Create one to get started."}
-          </p>
-        )}
-        {groupedDecks.map(({ source, decks }) => (
-          <div key={source} className="flex flex-col gap-1.5">
-            <div className="flex items-center gap-1.5">
-              <span className="text-sm leading-none">{SOURCE_ICON[source] ?? "·"}</span>
-              <p className="text-xs text-neutral-400 uppercase tracking-wider font-medium">{source}</p>
-            </div>
-            <div className="flex flex-col divide-y divide-neutral-100 border border-neutral-100 rounded-xl overflow-hidden">
-              {decks.map((deck) => (
-                <button
-                  key={deck.id || deck.name}
-                  onClick={() => router.push(`/study?resource=${encodeURIComponent(deck.id)}&name=${encodeURIComponent(deck.name)}`)}
-                  disabled={deck.due === 0}
-                  className="flex items-center justify-between px-5 py-4 bg-white hover:bg-neutral-50 transition-colors disabled:opacity-40 disabled:cursor-default text-left"
-                >
-                  <div>
-                    <p className="font-medium text-sm text-neutral-900">{deck.name}</p>
-                    <p className="text-xs text-neutral-400 mt-0.5">
-                      {deck.total} card{deck.total !== 1 ? "s" : ""}
-                      {deck.topics.length > 0 && ` · ${deck.topics.join(", ")}`}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {deck.due > 0 ? (
-                      <span className="text-sm font-semibold text-neutral-900 bg-neutral-100 rounded-full px-2.5 py-0.5">
-                        {deck.due} due
-                      </span>
-                    ) : (
-                      <span className="text-xs text-neutral-400">Done</span>
-                    )}
-                    <svg className="text-neutral-300" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                      <path d="M5 12h14M12 5l7 7-7 7" />
-                    </svg>
-                  </div>
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* New deck modal */}
-      {showNewDeck && (
-        <div className="fixed inset-0 bg-black/30 flex items-end sm:items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl w-full max-w-sm p-6 shadow-xl">
-            <h2 className="font-semibold text-lg mb-1">New deck</h2>
-            <p className="text-sm text-neutral-500 mb-5">
-              Name your deck — e.g. &quot;Neuroscienze L1&quot;. Then assign cards to it in Notion using the Deck property.
+      {/* Topics view */}
+      {view === "topics" && (
+        <div className="flex flex-col gap-2">
+          {!query && (
+            <p className="text-xs text-neutral-400 uppercase tracking-wider font-medium">Topics</p>
+          )}
+          {filteredTags.length === 0 && (
+            <p className="text-sm text-neutral-400 py-4 text-center">
+              {query ? "No topics match your search." : "No tags yet — add a Tags multi_select to your flashcard DB in Notion."}
             </p>
-            <form onSubmit={handleCreateDeck} className="flex flex-col gap-3">
-              <input
-                autoFocus
-                type="text"
-                placeholder="Deck name"
-                value={newDeckName}
-                onChange={(e) => setNewDeckName(e.target.value)}
-                className="w-full px-3 py-2.5 text-sm border border-neutral-200 rounded-lg focus:outline-none focus:border-neutral-400"
-              />
-              {createError && <p className="text-xs text-red-500">{createError}</p>}
-              <div className="flex gap-2 mt-1">
-                <button
-                  type="button"
-                  onClick={() => { setShowNewDeck(false); setNewDeckName(""); setCreateError(""); }}
-                  className="flex-1 py-2.5 text-sm border border-neutral-200 rounded-lg hover:bg-neutral-50 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={!newDeckName.trim() || creating}
-                  className="flex-1 py-2.5 text-sm bg-neutral-900 text-white rounded-lg hover:bg-neutral-800 transition-colors disabled:opacity-40"
-                >
-                  {creating ? "Creating..." : "Create"}
-                </button>
-              </div>
-            </form>
+          )}
+          <div className="flex flex-col divide-y divide-neutral-100 border border-neutral-100 rounded-xl overflow-hidden">
+            {filteredTags.map((tag) => (
+              <button
+                key={tag.name}
+                onClick={() => router.push(`/study?tag=${encodeURIComponent(tag.name)}&name=${encodeURIComponent(tag.name)}`)}
+                disabled={tag.due === 0}
+                className="flex items-center justify-between px-5 py-4 bg-white hover:bg-neutral-50 transition-colors disabled:opacity-40 disabled:cursor-default text-left"
+              >
+                <div>
+                  <p className="font-medium text-sm text-neutral-900">{tag.name}</p>
+                  <p className="text-xs text-neutral-400 mt-0.5">{tag.total} card{tag.total !== 1 ? "s" : ""}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  {tag.due > 0 ? (
+                    <span className="text-sm font-semibold text-neutral-900 bg-neutral-100 rounded-full px-2.5 py-0.5">
+                      {tag.due} due
+                    </span>
+                  ) : (
+                    <span className="text-xs text-neutral-400">Done ✓</span>
+                  )}
+                  <svg className="text-neutral-300" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M5 12h14M12 5l7 7-7 7" />
+                  </svg>
+                </div>
+              </button>
+            ))}
           </div>
+        </div>
+      )}
+
+      {/* Resources view */}
+      {view === "resources" && (
+        <div className="flex flex-col gap-4">
+          {!query && (
+            <p className="text-xs text-neutral-400 uppercase tracking-wider font-medium">Resources</p>
+          )}
+          {filteredDecks.length === 0 && (
+            <p className="text-sm text-neutral-400 py-4 text-center">
+              {query ? "No resources match your search." : "No resources with cards yet."}
+            </p>
+          )}
+          {groupedDecks.map(({ source, decks }) => (
+            <div key={source} className="flex flex-col gap-1.5">
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm leading-none">{SOURCE_ICON[source] ?? "·"}</span>
+                <p className="text-xs text-neutral-400 uppercase tracking-wider font-medium">{source}</p>
+              </div>
+              <div className="flex flex-col divide-y divide-neutral-100 border border-neutral-100 rounded-xl overflow-hidden">
+                {decks.map((deck) => (
+                  <button
+                    key={deck.id || deck.name}
+                    onClick={() => router.push(`/study?resource=${encodeURIComponent(deck.id)}&name=${encodeURIComponent(deck.name)}`)}
+                    disabled={deck.due === 0}
+                    className="flex items-center justify-between px-5 py-4 bg-white hover:bg-neutral-50 transition-colors disabled:opacity-40 disabled:cursor-default text-left"
+                  >
+                    <div>
+                      <p className="font-medium text-sm text-neutral-900">{deck.name}</p>
+                      <p className="text-xs text-neutral-400 mt-0.5">
+                        {deck.total} card{deck.total !== 1 ? "s" : ""}
+                        {deck.topics.length > 0 && ` · ${deck.topics.join(", ")}`}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {deck.due > 0 ? (
+                        <span className="text-sm font-semibold text-neutral-900 bg-neutral-100 rounded-full px-2.5 py-0.5">
+                          {deck.due} due
+                        </span>
+                      ) : (
+                        <span className="text-xs text-neutral-400">Done ✓</span>
+                      )}
+                      <svg className="text-neutral-300" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M5 12h14M12 5l7 7-7 7" />
+                      </svg>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
         </div>
       )}
 

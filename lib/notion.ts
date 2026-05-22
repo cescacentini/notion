@@ -38,7 +38,8 @@ export interface Flashcard {
   id: string;
   question: string;
   answer: string;
-  deck: string;
+  deck: string;      // first tag or legacy Deck select, kept for compat
+  tags: string[];    // all Tags multi_select values
   resourceIds: string[];
   easeFactor: number;
   interval: number;
@@ -59,11 +60,16 @@ export interface DeckStat {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function pageToFlashcard(page: any): Flashcard {
   const p = page.properties;
+  // Tags multi_select (preferred) — falls back to legacy Deck select
+  const tags: string[] = p.Tags?.multi_select?.map((t: { name: string }) => t.name) ?? [];
+  const legacyDeck: string = p.Deck?.select?.name ?? "";
+  const allTags = tags.length > 0 ? tags : (legacyDeck ? [legacyDeck] : []);
   return {
     id: page.id,
     question: extractText(p.Question.title),
     answer: extractText(p.Answer.rich_text),
-    deck: p.Deck?.select?.name ?? "",
+    deck: allTags[0] ?? "",
+    tags: allTags,
     resourceIds: p.Resources?.relation?.map((r: { id: string }) => r.id) ?? [],
     easeFactor: p.EaseFactor?.number ?? 2.5,
     interval: p.Interval?.number ?? 0,
@@ -142,7 +148,7 @@ export async function getResourcesWithNoCards(): Promise<Resource[]> {
   return checks.filter((c) => !c.hasCards).map((c) => c.resource);
 }
 
-export async function getDueCards(resourceId?: string): Promise<Flashcard[]> {
+export async function getDueCards(resourceId?: string, tag?: string): Promise<Flashcard[]> {
   const today = new Date().toISOString().split("T")[0];
   const dateFilter = {
     or: [
@@ -150,10 +156,32 @@ export async function getDueCards(resourceId?: string): Promise<Flashcard[]> {
       { property: "NextReview", date: { on_or_before: today } },
     ],
   };
-  const filter = resourceId && resourceId !== "all"
-    ? { and: [dateFilter, { property: "Resources", relation: { contains: resourceId } }] }
-    : dateFilter;
+  let filter: object;
+  if (resourceId && resourceId !== "all") {
+    filter = { and: [dateFilter, { property: "Resources", relation: { contains: resourceId } }] };
+  } else if (tag) {
+    filter = { and: [dateFilter, { property: "Tags", multi_select: { contains: tag } }] };
+  } else {
+    filter = dateFilter;
+  }
   return queryAllCards(filter);
+}
+
+export async function getTagStats(): Promise<DeckStat[]> {
+  const all = await getAllCards();
+  const today = new Date().toISOString().split("T")[0];
+  const map = new Map<string, DeckStat>();
+  for (const card of all) {
+    const isDue = !card.nextReview || card.nextReview <= today;
+    const cardTags = card.tags.length > 0 ? card.tags : ["Untagged"];
+    for (const tag of cardTags) {
+      if (!map.has(tag)) map.set(tag, { id: tag, name: tag, total: 0, due: 0, source: null, topics: [] });
+      const stat = map.get(tag)!;
+      stat.total++;
+      if (isDue) stat.due++;
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => b.due - a.due);
 }
 
 export async function getDueCount(): Promise<number> {
@@ -252,17 +280,19 @@ export async function createFlashcard(input: {
   question: string;
   answer: string;
   resourceId: string;
+  tags?: string[];
 }): Promise<void> {
+  const properties: Record<string, unknown> = {
+    Question:  { title: [{ text: { content: input.question } }] },
+    Answer:    { rich_text: [{ text: { content: input.answer } }] },
+    Resources: { relation: [{ id: input.resourceId }] },
+  };
+  if (input.tags && input.tags.length > 0) {
+    properties.Tags = { multi_select: input.tags.map((name) => ({ name })) };
+  }
   await notionFetch(`${BASE}/pages`, {
     method: "POST",
-    body: JSON.stringify({
-      parent: { database_id: DATABASE_ID },
-      properties: {
-        Question:  { title: [{ text: { content: input.question } }] },
-        Answer:    { rich_text: [{ text: { content: input.answer } }] },
-        Resources: { relation: [{ id: input.resourceId }] },
-      },
-    }),
+    body: JSON.stringify({ parent: { database_id: DATABASE_ID }, properties }),
   });
 }
 

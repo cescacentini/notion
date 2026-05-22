@@ -1,4 +1,4 @@
-import { getDeckStats, getAllCards } from "@/lib/notion";
+import { getDeckStats, getTagStats, getAllCards } from "@/lib/notion";
 import Dashboard from "@/components/Dashboard";
 
 export const dynamic = "force-dynamic";
@@ -50,7 +50,7 @@ function computeStats(allCards: Awaited<ReturnType<typeof getAllCards>>) {
 }
 
 export default async function FlashcardsPage() {
-  const [decks, allCards] = await Promise.all([getDeckStats(), getAllCards()]);
+  const [decks, tagStats, allCards] = await Promise.all([getDeckStats(), getTagStats(), getAllCards()]);
   const stats = computeStats(allCards);
-  return <Dashboard decks={decks} allCards={allCards} {...stats} />;
+  return <Dashboard decks={decks} tagStats={tagStats} allCards={allCards} {...stats} />;
 }

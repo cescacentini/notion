@@ -65,6 +65,7 @@ export async function POST(req: NextRequest) {
         question: card.question.trim(),
         answer: card.answer.trim(),
         resourceId,
+        tags: resource.topics, // auto-tag from the resource's topics
       });
       created++;
     }

@@ -213,9 +213,10 @@ type SessionState = "loading" | "ready" | "empty" | "done" | "error";
 interface Props {
   resource?: string;
   deckLabel?: string;
+  tag?: string;
 }
 
-export default function StudySession({ resource, deckLabel }: Props) {
+export default function StudySession({ resource, deckLabel, tag }: Props) {
   const router = useRouter();
   const [cards, setCards] = useState<FlashcardType[]>([]);
   const [index, setIndex] = useState(0);
@@ -233,6 +234,8 @@ export default function StudySession({ resource, deckLabel }: Props) {
     setErrorMsg("");
     const url = resource && resource !== "all"
       ? `/api/cards?resource=${encodeURIComponent(resource)}`
+      : tag
+      ? `/api/cards?tag=${encodeURIComponent(tag)}`
       : "/api/cards";
     fetch(url)
       .then((r) => {

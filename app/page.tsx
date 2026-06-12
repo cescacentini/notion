@@ -72,7 +72,7 @@ export default async function Home() {
   };
 
   return (
-    <div className="min-h-full max-w-xl mx-auto px-5 py-8 flex flex-col gap-6">
+    <div className="min-h-full max-w-xl mx-auto px-5 pt-8 pb-[env(safe-area-inset-bottom,24px)] flex flex-col gap-6">
       <div className="flex items-center justify-between">
         <div>
           <p className="text-xs text-neutral-400">{greeting()}</p>

@@ -30,7 +30,11 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="h-full">
-      <body className="h-full">{children}</body>
+      <head>
+        {/* iOS safe area support */}
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover" />
+      </head>
+      <body className="h-full bg-white">{children}</body>
     </html>
   );
 }

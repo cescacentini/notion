@@ -448,7 +448,7 @@ export default function StudySession({ resource, deckLabel, tag }: Props) {
 
       {/* Rating buttons */}
       <div
-        className={`px-5 pb-8 transition-opacity duration-200 ${
+        className={`px-5 pb-[max(32px,env(safe-area-inset-bottom))] transition-opacity duration-200 ${
           flipped ? "opacity-100" : "opacity-0 pointer-events-none"
         }`}
       >
@@ -492,7 +492,7 @@ export default function StudySession({ resource, deckLabel, tag }: Props) {
 
       {/* Tap hint */}
       <div
-        className={`pb-8 text-center transition-opacity duration-200 ${
+        className={`pb-[max(32px,env(safe-area-inset-bottom))] text-center transition-opacity duration-200 ${
           flipped ? "opacity-0 pointer-events-none" : "opacity-100"
         }`}
       >

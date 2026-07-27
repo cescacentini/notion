@@ -69,7 +69,7 @@ export default function Dashboard({
   }, [allCards, query]);
 
   return (
-    <div className="min-h-full max-w-xl mx-auto px-5 py-8 flex flex-col gap-6">
+    <div className="min-h-full max-w-xl mx-auto px-5 pt-8 pb-[env(safe-area-inset-bottom,24px)] flex flex-col gap-6">
 
       {/* Header */}
       <div className="flex items-center justify-between">

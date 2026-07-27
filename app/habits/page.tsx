@@ -5,9 +5,11 @@ import Link from "next/link";
 export const dynamic = "force-dynamic";
 
 export default async function HabitsPage() {
-  const habits = await getTodayHabits();
+  let habits: Awaited<ReturnType<typeof getTodayHabits>> = null;
+  try { habits = await getTodayHabits(); } catch { /* DB not configured */ }
+
   return (
-    <div className="min-h-full max-w-xl mx-auto px-5 py-8 flex flex-col gap-6">
+    <div className="min-h-full max-w-xl mx-auto px-5 pt-8 pb-[env(safe-area-inset-bottom,24px)] flex flex-col gap-6">
       <div className="flex items-center gap-3">
         <Link href="/" className="text-neutral-400 hover:text-neutral-700 transition-colors">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

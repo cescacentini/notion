@@ -6,6 +6,7 @@ export const TASKS_DB      = process.env.NOTION_TASKS_DB;
 export const SOCIAL_DB     = process.env.NOTION_SOCIAL_DB;
 export const PROJECTS_DB   = process.env.NOTION_PROJECTS_DB;
 export const JOURNAL_DB    = process.env.NOTION_JOURNAL_DB;
+export const VOCAB_DB      = process.env.NOTION_VOCAB_DB;
 
 const NOTION_VERSION = "2022-06-28";
 const BASE = "https://api.notion.com/v1";
@@ -728,4 +729,137 @@ export async function getAllDatabases(): Promise<NotionDatabase[]> {
   return results
     .filter((r): r is PromiseFulfilledResult<NotionDatabase> => r.status === "fulfilled")
     .map((r) => r.value);
+}
+
+// ─── Vocabulary ────────────────────────────────────────────────────────────
+
+export interface VocabCard {
+  id: string;
+  word: string;
+  translation: string;
+  language: string;
+  example: string;
+  tags: string[];
+  easeFactor: number;
+  interval: number;
+  repetitions: number;
+  nextReview: string | null;
+  lastReview: string | null;
+}
+
+export interface VocabLanguageStat {
+  language: string;
+  total: number;
+  due: number;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function pageToVocabCard(page: any): VocabCard {
+  const p = page.properties;
+  return {
+    id: page.id,
+    word:        extractText(p.Word?.title ?? []),
+    translation: extractText(p.Translation?.rich_text ?? []),
+    language:    p.Language?.select?.name ?? "Other",
+    example:     extractText(p.Example?.rich_text ?? []),
+    tags:        p.Tags?.multi_select?.map((t: { name: string }) => t.name) ?? [],
+    easeFactor:  p.EaseFactor?.number ?? 2.5,
+    interval:    p.Interval?.number ?? 0,
+    repetitions: p.Repetitions?.number ?? 0,
+    nextReview:  p.NextReview?.date?.start ?? null,
+    lastReview:  p.LastReview?.date?.start ?? null,
+  };
+}
+
+async function queryAllVocab(filter?: object): Promise<VocabCard[]> {
+  if (!VOCAB_DB) return [];
+  const cards: VocabCard[] = [];
+  let cursor: string | undefined;
+  do {
+    const body: Record<string, unknown> = { page_size: 100 };
+    if (filter) body.filter = filter;
+    if (cursor) body.start_cursor = cursor;
+    const data = await notionFetch(`${BASE}/databases/${VOCAB_DB}/query`, {
+      method: "POST",
+      body: JSON.stringify(body),
+    });
+    cards.push(...data.results.map(pageToVocabCard));
+    cursor = data.has_more ? data.next_cursor : undefined;
+  } while (cursor);
+  return cards;
+}
+
+export async function getDueVocab(language?: string): Promise<VocabCard[]> {
+  if (!VOCAB_DB) return [];
+  const today = new Date().toISOString().split("T")[0];
+  const dateFilter = {
+    or: [
+      { property: "NextReview", date: { is_empty: true } },
+      { property: "NextReview", date: { on_or_before: today } },
+    ],
+  };
+  const filter = language && language !== "all"
+    ? { and: [dateFilter, { property: "Language", select: { equals: language } }] }
+    : dateFilter;
+  return queryAllVocab(filter);
+}
+
+export async function getVocabLanguageStats(): Promise<VocabLanguageStat[]> {
+  if (!VOCAB_DB) return [];
+  const all = await queryAllVocab();
+  const today = new Date().toISOString().split("T")[0];
+  const map = new Map<string, VocabLanguageStat>();
+  for (const card of all) {
+    const lang = card.language || "Other";
+    if (!map.has(lang)) map.set(lang, { language: lang, total: 0, due: 0 });
+    const stat = map.get(lang)!;
+    stat.total++;
+    if (!card.nextReview || card.nextReview <= today) stat.due++;
+  }
+  return Array.from(map.values()).sort((a, b) => b.due - a.due);
+}
+
+export async function getVocabDueCount(): Promise<number> {
+  if (!VOCAB_DB) return 0;
+  const cards = await getDueVocab();
+  return cards.length;
+}
+
+export async function updateVocabSM2(
+  pageId: string, easeFactor: number, interval: number,
+  repetitions: number, nextReview: string
+): Promise<void> {
+  await notionFetch(`${BASE}/pages/${pageId}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      properties: {
+        EaseFactor:  { number: easeFactor },
+        Interval:    { number: interval },
+        Repetitions: { number: repetitions },
+        NextReview:  { date: { start: nextReview } },
+        LastReview:  { date: { start: new Date().toISOString().split("T")[0] } },
+      },
+    }),
+  });
+}
+
+export async function createVocabCard(input: {
+  word: string;
+  translation: string;
+  language: string;
+  example?: string;
+  tags?: string[];
+}): Promise<void> {
+  if (!VOCAB_DB) throw new Error("NOTION_VOCAB_DB not configured");
+  const properties: Record<string, unknown> = {
+    Word:        { title: [{ text: { content: input.word } }] },
+    Translation: { rich_text: [{ text: { content: input.translation } }] },
+    Language:    { select: { name: input.language } },
+  };
+  if (input.example) properties.Example = { rich_text: [{ text: { content: input.example } }] };
+  if (input.tags?.length) properties.Tags = { multi_select: input.tags.map((n) => ({ name: n })) };
+  await notionFetch(`${BASE}/pages`, {
+    method: "POST",
+    body: JSON.stringify({ parent: { database_id: VOCAB_DB }, properties }),
+  });
 }

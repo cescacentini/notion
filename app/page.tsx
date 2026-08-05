@@ -6,6 +6,7 @@ import {
   getTodayTasks,
   getTodaySocialPosts,
   getActiveProjectsCount,
+  getVocabDueCount,
 } from "@/lib/notion";
 import { isConfigured, getAvailableSections, isSectionAvailable } from "@/lib/config";
 import HomeHub, { HomeStatus } from "@/components/HomeHub";
@@ -51,14 +52,15 @@ export default async function Home() {
     return p.catch(() => fallback);
   }
 
-  const [dueCount, resources, habitsEntry, tasks, socialPosts, projectsCount] =
+  const [dueCount, resources, habitsEntry, tasks, socialPosts, projectsCount, vocabDue] =
     await Promise.all([
       safe(getDueCount(), 0),
       safe(getInProgressResources(), []),
-      isSectionAvailable("habits")  ? safe(getTodayHabits(), null)    : Promise.resolve(null),
-      isSectionAvailable("tasks")   ? safe(getTodayTasks(), [])       : Promise.resolve([]),
-      isSectionAvailable("social")  ? safe(getTodaySocialPosts(), []) : Promise.resolve([]),
+      isSectionAvailable("habits")  ? safe(getTodayHabits(), null)     : Promise.resolve(null),
+      isSectionAvailable("tasks")   ? safe(getTodayTasks(), [])        : Promise.resolve([]),
+      isSectionAvailable("social")  ? safe(getTodaySocialPosts(), [])  : Promise.resolve([]),
       isSectionAvailable("projects")? safe(getActiveProjectsCount(), 0): Promise.resolve(0),
+      isSectionAvailable("vocab")   ? safe(getVocabDueCount(), 0)      : Promise.resolve(0),
     ]);
 
   const status: HomeStatus = {
@@ -69,6 +71,7 @@ export default async function Home() {
     flashcards: dueCount,
     social:     (socialPosts as Awaited<ReturnType<typeof getTodaySocialPosts>>).length,
     projects:   projectsCount as number,
+    vocab:      vocabDue as number,
   };
 
   return (
@@ -118,7 +121,7 @@ export default async function Home() {
       {available.length > 1 && (
         <HomeHub
           status={status}
-          available={available.filter((s) => s !== "resources") as ("flashcards" | "habits" | "tasks" | "social" | "projects")[]}
+          available={available.filter((s) => s !== "resources") as ("flashcards" | "habits" | "tasks" | "social" | "projects" | "vocab")[]}
         />
       )}
     </div>

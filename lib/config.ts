@@ -4,6 +4,7 @@ export const OPTIONAL_SECTIONS = [
   "tasks",
   "projects",
   "social",
+  "vocab",
 ] as const;
 
 export type OptionalSection = (typeof OPTIONAL_SECTIONS)[number];
@@ -15,6 +16,7 @@ const SECTION_ENV: Record<OptionalSection, string | undefined> = {
   tasks:     process.env.NOTION_TASKS_DB,
   projects:  process.env.NOTION_PROJECTS_DB,
   social:    process.env.NOTION_SOCIAL_DB,
+  vocab:     process.env.NOTION_VOCAB_DB,
 };
 
 export function isConfigured(): boolean {

@@ -9,9 +9,10 @@ export interface HomeStatus {
   flashcards: number;
   social: number;
   projects: number;
+  vocab: number;
 }
 
-const ALL_SECTION_IDS = ["habits", "tasks", "flashcards", "social", "projects"] as const;
+const ALL_SECTION_IDS = ["habits", "tasks", "flashcards", "vocab", "social", "projects"] as const;
 type SectionId = typeof ALL_SECTION_IDS[number];
 
 
@@ -47,6 +48,20 @@ const SECTION_META: Record<SectionId, { label: string; href: string; icon: React
         <rect x="2" y="6" width="20" height="14" rx="2" />
         <path d="M2 10h20" />
         <path d="M7 3l5 3 5-3" />
+      </svg>
+    ),
+  },
+  vocab: {
+    label: "Languages",
+    href: "/vocab",
+    icon: (
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <path d="M5 8l6 6" />
+        <path d="M4 14l6-6 2-3" />
+        <path d="M2 5h12" />
+        <path d="M7 2h1" />
+        <path d="M22 22l-5-10-5 10" />
+        <path d="M14 18h6" />
       </svg>
     ),
   },
@@ -88,6 +103,9 @@ function badge(id: SectionId, status: HomeStatus): { text: string; alert: boolea
     case "flashcards":
       if (!status.flashcards) return null;
       return { text: String(status.flashcards), alert: true };
+    case "vocab":
+      if (!status.vocab) return null;
+      return { text: String(status.vocab), alert: true };
     case "social":
       if (!status.social) return null;
       return { text: String(status.social), alert: false };

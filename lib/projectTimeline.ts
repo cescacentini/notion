@@ -13,13 +13,12 @@ export interface QuarterBucket {
   label: string;
   isCurrent: boolean;
   goals: GoalOverview[];
-  months: MonthBucket[];
-  count: number;
 }
 
 export interface YearTimeline {
   goals: GoalOverview[];
   quarters: QuarterBucket[];
+  months: MonthBucket[];
   undatedGoals: GoalOverview[];
   undatedProjects: Project[];
 }
@@ -59,50 +58,37 @@ export function timelineYears(overview: ProjectsOverview, today: string) {
 export function buildYearTimeline(overview: ProjectsOverview, year: number, today: string): YearTimeline {
   const isCurrentYear = yearOf(today) === year;
   const currentMonth = monthOf(today);
-  const currentQuarter = quarterOf(currentMonth);
   const goalsInYear = overview.goals.filter((goal) => goal.byWhen && yearOf(goal.byWhen) === year);
   const projects = activeProjects(overview);
   const projectsInYear = projects.filter((project) => project.dueDate && yearOf(project.dueDate) === year);
 
-  const quarters: QuarterBucket[] = [1, 2, 3, 4].map((quarter) => {
-    const months: MonthBucket[] = [0, 1, 2].map((offset) => {
-      const month = (quarter - 1) * 3 + 1 + offset;
-      return {
-        month,
-        label: MONTHS[month - 1],
-        isCurrent: isCurrentYear && month === currentMonth,
-        // Goals without a recognised type sit at the month of their date.
-        goals: goalsInYear.filter((goal) =>
-          goal.type !== "yearly" && goal.type !== "quaterly" && monthOf(goal.byWhen!) === month
-        ),
-        projects: projectsInYear.filter((project) => monthOf(project.dueDate!) === month),
-      };
-    }).filter((bucket) => bucket.isCurrent || bucket.goals.length + bucket.projects.length > 0);
-
-    const goals = goalsInYear.filter((goal) =>
-      goal.type === "quaterly" && quarterOf(monthOf(goal.byWhen!)) === quarter
-    );
+  const months: MonthBucket[] = MONTHS.map((label, index) => {
+    const month = index + 1;
     return {
-      quarter,
-      label: `Q${quarter}`,
-      isCurrent: isCurrentYear && quarter === currentQuarter,
-      goals,
-      months,
-      count: goals.length + months.reduce((sum, bucket) => sum + bucket.goals.length + bucket.projects.length, 0),
+      month,
+      label,
+      isCurrent: isCurrentYear && month === currentMonth,
+      // Goals without a recognised type sit at the month of their date.
+      goals: goalsInYear.filter((goal) =>
+        goal.type !== "yearly" && goal.type !== "quaterly" && monthOf(goal.byWhen!) === month
+      ),
+      projects: projectsInYear.filter((project) => monthOf(project.dueDate!) === month),
     };
-  }).filter((bucket) => bucket.isCurrent || bucket.count > 0);
+  });
 
-  // In the current year, what's coming up reads first; earlier quarters follow.
-  const ordered = isCurrentYear
-    ? [
-        ...quarters.filter((bucket) => bucket.quarter >= currentQuarter),
-        ...quarters.filter((bucket) => bucket.quarter < currentQuarter),
-      ]
-    : quarters;
+  const quarters: QuarterBucket[] = [1, 2, 3, 4].map((quarter) => ({
+    quarter,
+    label: `Q${quarter}`,
+    isCurrent: isCurrentYear && quarter === quarterOf(currentMonth),
+    goals: goalsInYear.filter((goal) =>
+      goal.type === "quaterly" && quarterOf(monthOf(goal.byWhen!)) === quarter
+    ),
+  }));
 
   return {
     goals: goalsInYear.filter((goal) => goal.type === "yearly"),
-    quarters: ordered,
+    quarters,
+    months,
     undatedGoals: overview.goals.filter((goal) => !goal.byWhen),
     undatedProjects: projects.filter((project) => !project.dueDate),
   };

@@ -5,7 +5,7 @@ function formatDate(date: string) {
   return new Date(date).toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
 }
 
-export default function GoalCard({ goal }: { goal: GoalOverview }) {
+export default function GoalCard({ goal, compact = false }: { goal: GoalOverview; compact?: boolean }) {
   const today = new Date().toISOString().split("T")[0];
   const overdue = goal.byWhen !== null && goal.byWhen < today;
 
@@ -48,9 +48,9 @@ export default function GoalCard({ goal }: { goal: GoalOverview }) {
         )}
       </div>
 
-      {goal.activeProjects.map((project) => <ProjectRow key={project.id} project={project} />)}
+      {!compact && goal.activeProjects.map((project) => <ProjectRow key={project.id} project={project} />)}
 
-      {goal.activeProjects.length === 0 && (
+      {!compact && goal.activeProjects.length === 0 && (
         <p className="px-1 pb-1 text-xs text-neutral-400">
           {goal.totalProjects === 0 ? "No projects linked yet." : "No active projects right now."}
         </p>

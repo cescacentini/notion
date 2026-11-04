@@ -1,6 +1,7 @@
 import { getProjectsOverview, type GoalOverview, type ProjectsOverview } from "@/lib/notion";
 import GoalCard from "@/components/GoalCard";
 import ProjectRow from "@/components/ProjectRow";
+import ProjectsTimeline from "@/components/ProjectsTimeline";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +20,13 @@ function groupGoals(goals: GoalOverview[]) {
   ].filter((group) => group.goals.length > 0);
 }
 
-export default async function ProjectsPage() {
+export default async function ProjectsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ view?: string; year?: string }>;
+}) {
+  const { view, year } = await searchParams;
+  const byDate = view === "date";
   let overview: ProjectsOverview | null = null;
   try {
     overview = await getProjectsOverview();
@@ -38,20 +45,39 @@ export default async function ProjectsPage() {
         <h1 className="text-xl font-semibold tracking-tight">Goals &amp; projects</h1>
       </div>
 
+      <nav aria-label="View" className="grid grid-cols-2 gap-1 p-1 bg-neutral-100 rounded-xl text-sm font-medium">
+        <Link
+          href="/projects"
+          aria-current={byDate ? undefined : "page"}
+          className={`text-center py-2 rounded-lg transition-colors ${byDate ? "text-neutral-500" : "bg-white text-neutral-900 shadow-sm"}`}
+        >
+          By type
+        </Link>
+        <Link
+          href="/projects?view=date"
+          aria-current={byDate ? "page" : undefined}
+          className={`text-center py-2 rounded-lg transition-colors ${byDate ? "bg-white text-neutral-900 shadow-sm" : "text-neutral-500"}`}
+        >
+          By date
+        </Link>
+      </nav>
+
+      {overview && byDate && <ProjectsTimeline overview={overview} requestedYear={Number(year)} />}
+
       {!overview && (
         <p className="text-sm text-neutral-500 border border-neutral-100 rounded-xl px-4 py-4">
           Couldn&apos;t load your projects from Notion. Refresh to try again.
         </p>
       )}
 
-      {overview && groupGoals(overview.goals).map((group) => (
+      {overview && !byDate && groupGoals(overview.goals).map((group) => (
         <section key={group.label} className="flex flex-col gap-3">
           <h2 className="text-xs text-neutral-500 uppercase tracking-wider font-medium">{group.label}</h2>
           {group.goals.map((goal) => <GoalCard key={goal.id} goal={goal} />)}
         </section>
       ))}
 
-      {overview && overview.withoutGoal.length > 0 && (
+      {overview && !byDate && overview.withoutGoal.length > 0 && (
         <section className="flex flex-col gap-2">
           <div>
             <h2 className="text-xs text-neutral-500 uppercase tracking-wider font-medium">No goal</h2>

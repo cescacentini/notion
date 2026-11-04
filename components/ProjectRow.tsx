@@ -30,7 +30,7 @@ async function fetchList<T>(url: string): Promise<T[] | null> {
   }
 }
 
-export default function ProjectRow({ project }: { project: Project }) {
+export default function ProjectRow({ project, goalNames = [] }: { project: Project; goalNames?: string[] }) {
   const [open, setOpen] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -89,6 +89,9 @@ export default function ProjectRow({ project }: { project: Project }) {
               <path d="M6 9l6 6 6-6" />
             </svg>
           </div>
+          {goalNames.length > 0 && (
+            <p className="text-xs text-neutral-500 mt-0.5 truncate">Goal: {goalNames.join(", ")}</p>
+          )}
           <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
             <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${statusBadge(project.status)}`}>
               {project.status}

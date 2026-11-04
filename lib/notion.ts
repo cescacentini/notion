@@ -160,8 +160,26 @@ export async function getDueCards(resourceId?: string, tag?: string): Promise<Fl
   let filter: object;
   if (resourceId && resourceId !== "all") {
     filter = { and: [dateFilter, { property: "Resources", relation: { contains: resourceId } }] };
+  } else if (tag === "Untagged") {
+    filter = {
+      and: [
+        dateFilter,
+        { property: "Tags", multi_select: { is_empty: true } },
+        { property: "Deck", select: { is_empty: true } },
+      ],
+    };
   } else if (tag) {
-    filter = { and: [dateFilter, { property: "Tags", multi_select: { contains: tag } }] };
+    filter = {
+      and: [
+        dateFilter,
+        {
+          or: [
+            { property: "Tags", multi_select: { contains: tag } },
+            { property: "Deck", select: { equals: tag } },
+          ],
+        },
+      ],
+    };
   } else {
     filter = dateFilter;
   }
@@ -359,6 +377,29 @@ export async function getTodayHabits(): Promise<HabitsEntry | null> {
   };
 }
 
+export async function createTodayHabits(): Promise<HabitsEntry | null> {
+  if (!HABITS_DB) return null;
+  const existing = await getTodayHabits();
+  if (existing) return existing;
+
+  const today = new Date().toISOString().split("T")[0];
+  const [habitKeys, page] = await Promise.all([
+    getHabitKeys(),
+    notionFetch(`${BASE}/pages`, {
+      method: "POST",
+      body: JSON.stringify({
+        parent: { database_id: HABITS_DB },
+        properties: { Date: { date: { start: today } } },
+      }),
+    }),
+  ]);
+  return {
+    id: page.id,
+    date: today,
+    habits: habitKeys.map(({ key, label }) => ({ key, label, checked: false })),
+  };
+}
+
 export async function toggleHabit(
   pageId: string, habitKey: string, checked: boolean
 ): Promise<void> {
@@ -544,63 +585,142 @@ export interface Project {
   id: string;
   name: string;
   status: string;
+  priority: string | null;
+  dueDate: string | null;
+  goalIds: string[];
   totalTasks: number;
   doneTasks: number;
-  startDate: string | null;
-  endDate: string | null;
 }
 
-export async function getActiveProjects(): Promise<Project[]> {
-  if (!PROJECTS_DB) return [];
-  const data = await notionFetch(`${BASE}/databases/${PROJECTS_DB}/query`, {
-    method: "POST",
-    body: JSON.stringify({
-      filter: {
-        or: [
-          { property: "Status", status: { equals: "In progress" } },
-          { property: "Status", status: { equals: "On Hold" } },
-        ],
-      },
-      page_size: 20,
-    }),
-  });
+export interface GoalOverview {
+  id: string;
+  name: string;
+  type: string | null;
+  byWhen: string | null;
+  status: string;
+  progress: number | null;
+  doneProjects: number;
+  totalProjects: number;
+  activeProjects: Project[];
+}
 
+export interface ProjectsOverview {
+  goals: GoalOverview[];
+  withoutGoal: Project[];
+}
+
+const ACTIVE_PROJECT_STATUSES = ["In progress", "On Hold"];
+const CLOSED_GOAL_STATUSES = ["Done", "abandoned"];
+const PRIORITY_ORDER = ["Urgent", "High", "Medium", "Low"];
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function queryAllPages(databaseId: string, query: object = {}): Promise<any[]> {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const projects = data.results.map((page: any) => {
+  const pages: any[] = [];
+  let cursor: string | undefined;
+  do {
+    const data = await notionFetch(`${BASE}/databases/${databaseId}/query`, {
+      method: "POST",
+      body: JSON.stringify({ ...query, page_size: 100, ...(cursor ? { start_cursor: cursor } : {}) }),
+    });
+    pages.push(...data.results);
+    cursor = data.has_more ? data.next_cursor : undefined;
+  } while (cursor);
+  return pages;
+}
+
+function compareProjects(a: Project, b: Project): number {
+  const rank = (priority: string | null) => {
+    const i = PRIORITY_ORDER.indexOf(priority ?? "");
+    return i === -1 ? PRIORITY_ORDER.length : i;
+  };
+  return (
+    ACTIVE_PROJECT_STATUSES.indexOf(a.status) - ACTIVE_PROJECT_STATUSES.indexOf(b.status) ||
+    rank(a.priority) - rank(b.priority) ||
+    (a.dueDate ?? "9999").localeCompare(b.dueDate ?? "9999")
+  );
+}
+
+function projectProgress(project: Project): number {
+  if (project.status === "Completed") return 1;
+  return project.totalTasks > 0 ? project.doneTasks / project.totalTasks : 0;
+}
+
+export async function getProjectsOverview(): Promise<ProjectsOverview> {
+  if (!PROJECTS_DB) return { goals: [], withoutGoal: [] };
+
+  const schema = await notionFetch(`${BASE}/databases/${PROJECTS_DB}`);
+  const goalsDb: string | undefined = schema.properties.Goals?.relation?.database_id;
+
+  const [projectPages, taskPages, goalPages] = await Promise.all([
+    queryAllPages(PROJECTS_DB, { filter: { property: "Status", status: { does_not_equal: "Abandoned" } } }),
+    TASKS_DB
+      ? queryAllPages(TASKS_DB, { filter: { property: "Projects", relation: { is_not_empty: true } } })
+      : Promise.resolve([]),
+    goalsDb ? queryAllPages(goalsDb) : Promise.resolve([]),
+  ]);
+
+  // Counted from the tasks themselves: a page's relation property stops at 25 items.
+  const taskCounts = new Map<string, { total: number; done: number }>();
+  for (const task of taskPages) {
+    const isDone = task.properties.Done?.status?.name === "Done";
+    for (const { id } of task.properties.Projects?.relation ?? []) {
+      const counts = taskCounts.get(id) ?? { total: 0, done: 0 };
+      counts.total++;
+      if (isDone) counts.done++;
+      taskCounts.set(id, counts);
+    }
+  }
+
+  const projects: Project[] = projectPages.map((page) => {
     const p = page.properties;
-    const dateRange = p.Date?.date ?? p.Timeline?.date ?? p["Date range"]?.date ?? null;
+    const counts = taskCounts.get(page.id);
     return {
       id: page.id,
-      name:      extractText(p.Name?.title ?? []),
-      status:    p.Status?.status?.name ?? "",
-      taskIds:   p.Tasks?.relation?.map((r: { id: string }) => r.id) ?? [],
-      startDate: dateRange?.start ?? null,
-      endDate:   dateRange?.end ?? null,
+      name: extractText(p.Name?.title ?? []),
+      status: p.Status?.status?.name ?? "",
+      priority: p.Priority?.select?.name ?? null,
+      dueDate: p["Due Date"]?.date?.start ?? null,
+      goalIds: p.Goals?.relation?.map((r: { id: string }) => r.id) ?? [],
+      totalTasks: counts?.total ?? 0,
+      doneTasks: counts?.done ?? 0,
     };
   });
+  const isActive = (project: Project) => ACTIVE_PROJECT_STATUSES.includes(project.status);
 
-  return Promise.all(
-    projects.map(async (proj: { id: string; name: string; status: string; taskIds: string[]; startDate: string | null; endDate: string | null }) => {
-      const totalTasks = proj.taskIds.length;
-      let doneTasks = 0;
-      if (totalTasks > 0 && TASKS_DB) {
-        const doneData = await notionFetch(`${BASE}/databases/${TASKS_DB}/query`, {
-          method: "POST",
-          body: JSON.stringify({
-            filter: {
-              and: [
-                { property: "Projects", relation: { contains: proj.id } },
-                { property: "Done", status: { equals: "Done" } },
-              ],
-            },
-            page_size: 100,
-          }),
-        });
-        doneTasks = doneData.results.length;
-      }
-      return { id: proj.id, name: proj.name, status: proj.status, totalTasks, doneTasks, startDate: proj.startDate, endDate: proj.endDate };
+  const goals: GoalOverview[] = goalPages
+    .filter((page) => !CLOSED_GOAL_STATUSES.includes(page.properties.Status?.status?.name))
+    .map((page) => {
+      const p = page.properties;
+      const linked = projects.filter((project) => project.goalIds.includes(page.id));
+      return {
+        id: page.id,
+        name: extractText(p.Name?.title ?? []),
+        type: p.type?.select?.name ?? null,
+        byWhen: p["by when"]?.date?.start ?? null,
+        status: p.Status?.status?.name ?? "",
+        progress: linked.length > 0
+          ? linked.reduce((sum, project) => sum + projectProgress(project), 0) / linked.length
+          : null,
+        doneProjects: linked.filter((project) => project.status === "Completed").length,
+        totalProjects: linked.length,
+        activeProjects: linked.filter(isActive).sort(compareProjects),
+      };
     })
-  );
+    .sort((a, b) => (a.byWhen ?? "9999").localeCompare(b.byWhen ?? "9999"));
+
+  const openGoalIds = new Set(goals.map((goal) => goal.id));
+  const withoutGoal = projects
+    .filter((project) => isActive(project) && !project.goalIds.some((id) => openGoalIds.has(id)))
+    .sort(compareProjects);
+
+  return { goals, withoutGoal };
+}
+
+export async function getProjectResources(projectId: string): Promise<Resource[]> {
+  const page = await notionFetch(`${BASE}/pages/${projectId}`);
+  const ids: string[] = page.properties.Resources?.relation?.map((r: { id: string }) => r.id) ?? [];
+  return Promise.all(ids.map(getResourceById));
 }
 
 export async function getProjectTasks(projectId: string): Promise<Task[]> {
@@ -627,7 +747,7 @@ export async function getActiveProjectsCount(): Promise<number> {
           { property: "Status", status: { equals: "On Hold" } },
         ],
       },
-      page_size: 20,
+      page_size: 100,
     }),
   });
   return data.results.length;

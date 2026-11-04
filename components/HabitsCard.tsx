@@ -6,12 +6,36 @@ import type { HabitsEntry } from "@/lib/notion";
 export default function HabitsCard({ initial }: { initial: HabitsEntry | null }) {
   const [entry, setEntry] = useState(initial);
   const [pending, setPending] = useState<string | null>(null);
+  const [starting, setStarting] = useState(false);
+  const [startFailed, setStartFailed] = useState(false);
+
+  async function startToday() {
+    setStarting(true);
+    setStartFailed(false);
+    try {
+      const res = await fetch("/api/habits", { method: "POST" });
+      if (!res.ok) throw new Error("Failed");
+      setEntry(await res.json());
+    } catch {
+      setStartFailed(true);
+    } finally {
+      setStarting(false);
+    }
+  }
 
   if (!entry) {
     return (
       <section className="border border-neutral-100 rounded-xl p-4">
         <p className="text-xs text-neutral-400 uppercase tracking-wider font-medium mb-3">Habits</p>
-        <p className="text-sm text-neutral-400">No entry for today yet.</p>
+        <p className="text-sm text-neutral-400 mb-3">No entry for today yet.</p>
+        <button
+          onClick={startToday}
+          disabled={starting}
+          className="px-3 py-2 text-sm bg-neutral-900 text-white rounded-lg hover:bg-neutral-800 disabled:opacity-50 transition-colors"
+        >
+          {starting ? "Starting…" : "Start today"}
+        </button>
+        {startFailed && <p className="text-xs text-red-500 mt-2">Couldn&apos;t create today&apos;s entry. Try again.</p>}
       </section>
     );
   }

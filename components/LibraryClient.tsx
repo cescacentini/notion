@@ -129,7 +129,22 @@ export default function LibraryClient({ dueCount, resources, recentCards, decks,
                     <p className="text-xs text-neutral-400 truncate mt-0.5">{r.topics.join(" · ")}</p>
                   )}
                 </div>
-                <GenerateButton resource={r} />
+                <div className="flex items-center gap-2">
+                  <a
+                    href={`https://notion.so/${r.id.replace(/-/g, "")}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-1.5 text-neutral-400 hover:text-neutral-700 transition-colors"
+                    title="Open in Notion"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6" />
+                      <polyline points="15 3 21 3 21 9" />
+                      <line x1="10" y1="14" x2="21" y2="3" />
+                    </svg>
+                  </a>
+                  <GenerateButton resource={r} />
+                </div>
               </div>
             ))
           )}

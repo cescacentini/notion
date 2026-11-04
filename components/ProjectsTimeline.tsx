@@ -8,10 +8,33 @@ const MONTH_INITIALS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", 
 
 const notionUrl = (id: string) => `https://notion.so/${id.replace(/-/g, "")}`;
 
-function yearFraction(date: string, year: number) {
-  const start = Date.UTC(year, 0, 1);
-  const end = Date.UTC(year + 1, 0, 1);
-  return Math.min(1, Math.max(0, (new Date(date.slice(0, 10)).getTime() - start) / (end - start)));
+// Months are equal-width columns, so a date is placed within its own month.
+// dayOffset says how far through the day to measure: 0 is its start, 1 its end.
+function yearFraction(date: string, year: number, dayOffset = 0) {
+  const dateYear = Number(date.slice(0, 4));
+  if (dateYear < year) return 0;
+  if (dateYear > year) return 1;
+  const month = Number(date.slice(5, 7));
+  const day = Number(date.slice(8, 10));
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return (month - 1 + (day - 1 + dayOffset) / daysInMonth) / 12;
+}
+
+function Chevron({ direction }: { direction: "left" | "right" }) {
+  return (
+    <svg
+      aria-hidden
+      width="10"
+      height="10"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="white"
+      strokeWidth="4"
+      className={`absolute top-px ${direction === "left" ? "left-0.5" : "right-0.5"}`}
+    >
+      <path d={direction === "left" ? "M15 5l-7 7 7 7" : "M9 5l7 7-7 7"} />
+    </svg>
+  );
 }
 
 function MonthLines() {
@@ -44,8 +67,10 @@ function ChartRow({
   const span = formatSpan(start, end, year);
   const overdue = end < today;
   const left = yearFraction(start, year) * 100;
-  const right = yearFraction(end, year) * 100;
+  const right = yearFraction(end, year, 1) * 100;
   const color = overdue ? "bg-red-500" : isGoal ? "bg-neutral-500" : "bg-neutral-900";
+  const startedBefore = Number(start.slice(0, 4)) < year;
+  const endsAfter = Number(end.slice(0, 4)) > year;
 
   return (
     <div className="grid grid-cols-[180px_1fr] lg:grid-cols-[240px_1fr] items-stretch hover:bg-neutral-50 transition-colors">
@@ -63,14 +88,17 @@ function ChartRow({
         {isRange(start, end) ? (
           <div
             title={`${name}: ${span}`}
-            className={`absolute top-1/2 -translate-y-1/2 h-3 rounded-full ${color}`}
+            className={`absolute top-1/2 -translate-y-1/2 h-3 ${startedBefore ? "" : "rounded-l-full"} ${endsAfter ? "" : "rounded-r-full"} ${color}`}
             style={{ left: `${left}%`, width: `max(${right - left}%, 6px)` }}
-          />
+          >
+            {startedBefore && <Chevron direction="left" />}
+            {endsAfter && <Chevron direction="right" />}
+          </div>
         ) : (
           <div
             title={`${name}: ${span}`}
             className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2.5 h-2.5 rotate-45 ${color}`}
-            style={{ left: `${left}%` }}
+            style={{ left: `${yearFraction(start, year, 0.5) * 100}%` }}
           />
         )}
       </div>
@@ -90,6 +118,35 @@ function YearChart({
   projects: Project[];
 }) {
   const showToday = Number(today.slice(0, 4)) === year;
+  const startedEarlier = (start: string | null) => Number(start?.slice(0, 4)) < year;
+  const earlierGoals = goals.filter((goal) => startedEarlier(goal.startDate));
+  const earlierProjects = projects.filter((project) => startedEarlier(project.startDate));
+  const newGoals = goals.filter((goal) => !startedEarlier(goal.startDate));
+  const newProjects = projects.filter((project) => !startedEarlier(project.startDate));
+  const goalRow = (goal: GoalOverview) => (
+    <ChartRow
+      key={goal.id}
+      id={goal.id}
+      name={goal.name}
+      start={goal.startDate!}
+      end={goal.byWhen!}
+      year={year}
+      today={today}
+      isGoal
+    />
+  );
+  const projectRow = (project: Project) => (
+    <ChartRow
+      key={project.id}
+      id={project.id}
+      name={project.name}
+      start={project.startDate!}
+      end={project.dueDate!}
+      year={year}
+      today={today}
+      isGoal={false}
+    />
+  );
   const rowGroup = (label: string, rows: ReactNode) => (
     <>
       <p className="pt-3 pb-1 text-[10px] text-neutral-500 uppercase tracking-wider font-medium">{label}</p>
@@ -115,31 +172,14 @@ function YearChart({
         </div>
       </div>
 
-      {goals.length > 0 && rowGroup("Goals", goals.map((goal) => (
-        <ChartRow
-          key={goal.id}
-          id={goal.id}
-          name={goal.name}
-          start={goal.startDate!}
-          end={goal.byWhen!}
-          year={year}
-          today={today}
-          isGoal
-        />
-      )))}
+      {earlierGoals.length + earlierProjects.length > 0 && rowGroup(
+        "Continuing from before " + year,
+        [...earlierGoals.map(goalRow), ...earlierProjects.map(projectRow)],
+      )}
 
-      {projects.length > 0 && rowGroup("Projects", projects.map((project) => (
-        <ChartRow
-          key={project.id}
-          id={project.id}
-          name={project.name}
-          start={project.startDate!}
-          end={project.dueDate!}
-          year={year}
-          today={today}
-          isGoal={false}
-        />
-      )))}
+      {newGoals.length > 0 && rowGroup("Goals", newGoals.map(goalRow))}
+
+      {newProjects.length > 0 && rowGroup("Projects", newProjects.map(projectRow))}
 
       {goals.length + projects.length === 0 && (
         <p className="py-6 text-xs text-neutral-400">Nothing dated in {year}.</p>

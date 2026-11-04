@@ -586,6 +586,7 @@ export interface Project {
   name: string;
   status: string;
   priority: string | null;
+  startDate: string | null;
   dueDate: string | null;
   goalIds: string[];
   totalTasks: number;
@@ -596,6 +597,7 @@ export interface GoalOverview {
   id: string;
   name: string;
   type: string | null;
+  startDate: string | null;
   byWhen: string | null;
   status: string;
   progress: number | null;
@@ -680,7 +682,9 @@ export async function getProjectsOverview(): Promise<ProjectsOverview> {
       name: extractText(p.Name?.title ?? []),
       status: p.Status?.status?.name ?? "",
       priority: p.Priority?.select?.name ?? null,
-      dueDate: p["Due Date"]?.date?.start ?? null,
+      startDate: p["Due Date"]?.date?.start ?? null,
+      // A date range in Notion is due at its end.
+      dueDate: p["Due Date"]?.date?.end ?? p["Due Date"]?.date?.start ?? null,
       goalIds: p.Goals?.relation?.map((r: { id: string }) => r.id) ?? [],
       totalTasks: counts?.total ?? 0,
       doneTasks: counts?.done ?? 0,
@@ -697,7 +701,8 @@ export async function getProjectsOverview(): Promise<ProjectsOverview> {
         id: page.id,
         name: extractText(p.Name?.title ?? []),
         type: p.type?.select?.name ?? null,
-        byWhen: p["by when"]?.date?.start ?? null,
+        startDate: p["by when"]?.date?.start ?? null,
+        byWhen: p["by when"]?.date?.end ?? p["by when"]?.date?.start ?? null,
         status: p.Status?.status?.name ?? "",
         progress: linked.length > 0
           ? linked.reduce((sum, project) => sum + projectProgress(project), 0) / linked.length

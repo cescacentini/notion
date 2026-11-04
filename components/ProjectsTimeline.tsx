@@ -2,38 +2,195 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import GoalCard from "@/components/GoalCard";
 import type { GoalOverview, Project, ProjectsOverview } from "@/lib/notion";
-import { buildYearTimeline, timelineYears } from "@/lib/projectTimeline";
+import { buildYearTimeline, formatSpan, isRange, timelineYears } from "@/lib/projectTimeline";
 
-function formatDay(date: string) {
-  return new Date(date).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+const MONTH_INITIALS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+const notionUrl = (id: string) => `https://notion.so/${id.replace(/-/g, "")}`;
+
+function yearFraction(date: string, year: number) {
+  const start = Date.UTC(year, 0, 1);
+  const end = Date.UTC(year + 1, 0, 1);
+  return Math.min(1, Math.max(0, (new Date(date.slice(0, 10)).getTime() - start) / (end - start)));
+}
+
+function MonthLines() {
+  return (
+    <div aria-hidden className="absolute inset-0 grid grid-cols-12">
+      {MONTH_INITIALS.map((month, index) => (
+        <div key={month} className={`border-l ${index % 3 === 0 ? "border-neutral-200" : "border-neutral-100"}`} />
+      ))}
+    </div>
+  );
+}
+
+function ChartRow({
+  id,
+  name,
+  start,
+  end,
+  year,
+  today,
+  isGoal,
+}: {
+  id: string;
+  name: string;
+  start: string;
+  end: string;
+  year: number;
+  today: string;
+  isGoal: boolean;
+}) {
+  const span = formatSpan(start, end, year);
+  const overdue = end < today;
+  const left = yearFraction(start, year) * 100;
+  const right = yearFraction(end, year) * 100;
+  const color = overdue ? "bg-red-500" : isGoal ? "bg-neutral-500" : "bg-neutral-900";
+
+  return (
+    <div className="grid grid-cols-[180px_1fr] lg:grid-cols-[240px_1fr] items-stretch hover:bg-neutral-50 transition-colors">
+      <a
+        href={notionUrl(id)}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="pr-3 py-1.5 min-w-0"
+      >
+        <p className="text-xs font-medium text-neutral-900 truncate">{name}</p>
+        <p className={`text-[10px] tabular-nums truncate ${overdue ? "text-red-600" : "text-neutral-400"}`}>{span}</p>
+      </a>
+      <div className="relative">
+        <MonthLines />
+        {isRange(start, end) ? (
+          <div
+            title={`${name}: ${span}`}
+            className={`absolute top-1/2 -translate-y-1/2 h-3 rounded-full ${color}`}
+            style={{ left: `${left}%`, width: `max(${right - left}%, 6px)` }}
+          />
+        ) : (
+          <div
+            title={`${name}: ${span}`}
+            className={`absolute top-1/2 -translate-y-1/2 -translate-x-1/2 w-2.5 h-2.5 rotate-45 ${color}`}
+            style={{ left: `${left}%` }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function YearChart({
+  year,
+  today,
+  goals,
+  projects,
+}: {
+  year: number;
+  today: string;
+  goals: GoalOverview[];
+  projects: Project[];
+}) {
+  const showToday = Number(today.slice(0, 4)) === year;
+  const rowGroup = (label: string, rows: ReactNode) => (
+    <>
+      <p className="pt-3 pb-1 text-[10px] text-neutral-500 uppercase tracking-wider font-medium">{label}</p>
+      <div className="flex flex-col">{rows}</div>
+    </>
+  );
+
+  return (
+    <section className="hidden sm:block relative">
+      <div className="grid grid-cols-[180px_1fr] lg:grid-cols-[240px_1fr] border-b border-neutral-200">
+        <div />
+        <div>
+          <div className="grid grid-cols-4">
+            {["Q1", "Q2", "Q3", "Q4"].map((quarter) => (
+              <p key={quarter} className="pl-1 text-xs font-semibold text-neutral-900">{quarter}</p>
+            ))}
+          </div>
+          <div className="grid grid-cols-12 mt-1 pb-1">
+            {MONTH_INITIALS.map((month) => (
+              <p key={month} className="pl-1 text-[10px] text-neutral-400">{month}</p>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {goals.length > 0 && rowGroup("Goals", goals.map((goal) => (
+        <ChartRow
+          key={goal.id}
+          id={goal.id}
+          name={goal.name}
+          start={goal.startDate!}
+          end={goal.byWhen!}
+          year={year}
+          today={today}
+          isGoal
+        />
+      )))}
+
+      {projects.length > 0 && rowGroup("Projects", projects.map((project) => (
+        <ChartRow
+          key={project.id}
+          id={project.id}
+          name={project.name}
+          start={project.startDate!}
+          end={project.dueDate!}
+          year={year}
+          today={today}
+          isGoal={false}
+        />
+      )))}
+
+      {goals.length + projects.length === 0 && (
+        <p className="py-6 text-xs text-neutral-400">Nothing dated in {year}.</p>
+      )}
+
+      {showToday && (
+        <div aria-hidden className="absolute inset-0 grid grid-cols-[180px_1fr] lg:grid-cols-[240px_1fr] pointer-events-none">
+          <div />
+          <div className="relative">
+            <div
+              className="absolute top-0 bottom-0 w-px bg-blue-500"
+              style={{ left: `${yearFraction(today, year) * 100}%` }}
+            />
+          </div>
+        </div>
+      )}
+    </section>
+  );
 }
 
 function Tile({
   id,
   name,
-  date,
+  start,
+  end,
+  year,
   today,
   detail,
 }: {
   id: string;
   name: string;
-  date: string | null;
+  start: string | null;
+  end: string | null;
+  year: number;
   today: string;
   detail?: string;
 }) {
-  const overdue = date !== null && date < today;
+  const overdue = end !== null && end < today;
   return (
     <a
-      href={`https://notion.so/${id.replace(/-/g, "")}`}
+      href={notionUrl(id)}
       target="_blank"
       rel="noopener noreferrer"
       className="block rounded-lg bg-white border border-neutral-100 px-2.5 py-2 hover:border-neutral-300 transition-colors"
     >
       <p className="text-xs font-medium text-neutral-900 line-clamp-3 break-words">{name}</p>
       {detail && <p className="text-[10px] text-neutral-500 mt-0.5 line-clamp-2 break-words">{detail}</p>}
-      {date && (
+      {end && (
         <p className={`text-[10px] mt-0.5 tabular-nums ${overdue ? "text-red-600" : "text-neutral-400"}`}>
-          {overdue ? "Was due" : "Due"} {formatDay(date)}
+          {!isRange(start, end) && (overdue ? "Was due " : "Due ")}
+          {formatSpan(start, end, year)}
         </p>
       )}
     </a>
@@ -44,11 +201,13 @@ function Items({
   goals,
   projects,
   goalNames,
+  year,
   today,
 }: {
   goals: GoalOverview[];
   projects: Project[];
   goalNames: (project: Project) => string[];
+  year: number;
   today: string;
 }) {
   return (
@@ -58,7 +217,9 @@ function Items({
           key={goal.id}
           id={goal.id}
           name={goal.name}
-          date={goal.byWhen}
+          start={goal.startDate}
+          end={goal.byWhen}
+          year={year}
           today={today}
           detail={goal.progress !== null ? `Goal · ${Math.round(goal.progress * 100)}%` : "Goal"}
         />
@@ -70,7 +231,9 @@ function Items({
             key={project.id}
             id={project.id}
             name={project.name}
-            date={project.dueDate}
+            start={project.startDate}
+            end={project.dueDate}
+            year={year}
             today={today}
             detail={names.length > 0 ? `Goal: ${names.join(", ")}` : undefined}
           />
@@ -141,22 +304,24 @@ export default function ProjectsTimeline({
         </section>
       )}
 
+      <YearChart year={year} today={today} goals={timeline.chartGoals} projects={timeline.chartProjects} />
+
       {hasQuarterGoals && (
-        <section className="flex flex-col gap-3">
+        <section className="flex flex-col gap-3 sm:hidden">
           <h2 className="text-xs text-neutral-500 uppercase tracking-wider font-medium">Quarters</h2>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 items-start">
+          <div className="grid grid-cols-2 gap-2 items-start">
             {timeline.quarters.map((quarter) => (
               <Cell key={quarter.quarter} label={quarter.label} isCurrent={quarter.isCurrent} count={quarter.goals.length}>
-                <Items goals={quarter.goals} projects={[]} goalNames={goalNames} today={today} />
+                <Items goals={quarter.goals} projects={[]} goalNames={goalNames} year={year} today={today} />
               </Cell>
             ))}
           </div>
         </section>
       )}
 
-      <section className="flex flex-col gap-3">
+      <section className="flex flex-col gap-3 sm:hidden">
         <h2 className="text-xs text-neutral-500 uppercase tracking-wider font-medium">Months</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+        <div className="grid grid-cols-2 gap-2">
           {timeline.months.map((month) => (
             <Cell
               key={month.month}
@@ -164,7 +329,7 @@ export default function ProjectsTimeline({
               isCurrent={month.isCurrent}
               count={month.goals.length + month.projects.length}
             >
-              <Items goals={month.goals} projects={month.projects} goalNames={goalNames} today={today} />
+              <Items goals={month.goals} projects={month.projects} goalNames={goalNames} year={year} today={today} />
             </Cell>
           ))}
         </div>
@@ -176,7 +341,7 @@ export default function ProjectsTimeline({
             No date <span className="ml-1 font-normal text-neutral-400 tabular-nums">{undatedCount}</span>
           </h2>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-            <Items goals={timeline.undatedGoals} projects={timeline.undatedProjects} goalNames={goalNames} today={today} />
+            <Items goals={timeline.undatedGoals} projects={timeline.undatedProjects} goalNames={goalNames} year={year} today={today} />
           </div>
         </section>
       )}

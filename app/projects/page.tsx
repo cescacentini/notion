@@ -35,7 +35,7 @@ export default async function ProjectsPage({
   }
 
   return (
-    <div className={`min-h-full ${byDate ? "max-w-4xl" : "max-w-xl"} mx-auto px-5 pt-8 pb-[max(env(safe-area-inset-bottom),24px)] flex flex-col gap-6`}>
+    <div className={`min-h-full ${byDate ? "max-w-6xl" : "max-w-xl"} mx-auto px-5 pt-8 pb-[max(env(safe-area-inset-bottom),24px)] flex flex-col gap-6`}>
       <div className="flex items-center gap-3">
         <Link href="/" aria-label="Back to home" className="text-neutral-400 hover:text-neutral-700 transition-colors">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

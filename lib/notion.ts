@@ -345,8 +345,23 @@ export async function getTodayHabits(): Promise<HabitsEntry | null> {
     }),
   ]);
 
-  if (!data.results.length) return null;
-  const page = data.results[0];
+  let page;
+  if (data.results.length) {
+    page = data.results[0];
+  } else {
+    // Auto-create today's entry
+    const properties: Record<string, unknown> = {
+      Date: { date: { start: today } },
+    };
+    for (const { key } of habitKeys) {
+      properties[key] = { checkbox: false };
+    }
+    page = await notionFetch(`${BASE}/pages`, {
+      method: "POST",
+      body: JSON.stringify({ parent: { database_id: HABITS_DB }, properties }),
+    });
+  }
+
   const p = page.properties;
   return {
     id: page.id,

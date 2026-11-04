@@ -36,11 +36,13 @@ export default async function LibraryPage() {
     getRecentlyReviewed(8),
   ]);
   const stats = computeStats(allCards);
+  const idsWithCards = new Set(allCards.flatMap((c) => c.resourceIds));
+  const resourcesWithoutCards = resources.filter((r) => !idsWithCards.has(r.id));
 
   return (
     <LibraryClient
       dueCount={dueCount}
-      resources={resources}
+      resources={resourcesWithoutCards}
       recentCards={recentCards}
       decks={decks}
       stats={{ streak: stats.streak, totalReviewed: stats.totalReviewed }}

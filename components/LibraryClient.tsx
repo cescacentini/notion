@@ -108,17 +108,11 @@ export default function LibraryClient({ dueCount, resources, recentCards, decks,
         </div>
       </Link>
 
-      {/* Resources — with Generate button */}
+      {newResources.length > 0 && (
       <div>
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="font-medium text-sm text-neutral-500">Resources</h2>
-          <p className="text-xs text-neutral-400">tap to generate flashcards</p>
-        </div>
+        <h2 className="font-medium text-sm text-neutral-500 mb-3">Needs flashcards</h2>
         <div className="flex flex-col gap-2">
-          {newResources.length === 0 ? (
-            <p className="text-sm text-neutral-400">No resources in progress</p>
-          ) : (
-            newResources.map((r) => (
+          {newResources.map((r) => (
               <div
                 key={r.id}
                 className="flex items-center gap-3 p-3 bg-neutral-50 rounded-xl"
@@ -146,10 +140,10 @@ export default function LibraryClient({ dueCount, resources, recentCards, decks,
                   <GenerateButton resource={r} />
                 </div>
               </div>
-            ))
-          )}
+          ))}
         </div>
       </div>
+      )}
 
       {/* Recently reviewed */}
       {recentCards.length > 0 && (

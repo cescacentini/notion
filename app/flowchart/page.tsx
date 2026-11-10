@@ -1,4 +1,4 @@
-import { getAllDatabases, DATABASE_ID, HABITS_DB, TASKS_DB, RESOURCES_DB, PROJECTS_DB, JOURNAL_DB, SOCIAL_DB } from "@/lib/notion";
+import { getAllDatabases, DATABASE_ID, TASKS_DB, RESOURCES_DB, PROJECTS_DB, JOURNAL_DB, SOCIAL_DB } from "@/lib/notion";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -36,16 +36,6 @@ function buildDbInfoMap(): Map<string, DbInfo> {
       </svg>
     ),
   });
-  add(HABITS_DB, {
-    name: "Habits",
-    color: "bg-green-100 text-green-700",
-    icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-        <path d="M9 12l2 2 4-4" />
-        <circle cx="12" cy="12" r="9" />
-      </svg>
-    ),
-  });
   add(TASKS_DB, {
     name: "Tasks",
     color: "bg-blue-100 text-blue-700",
@@ -67,7 +57,7 @@ function buildDbInfoMap(): Map<string, DbInfo> {
     ),
   });
   add(JOURNAL_DB, {
-    name: "Journal",
+    name: "Journal & habits",
     color: "bg-pink-100 text-pink-700",
     icon: (
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">

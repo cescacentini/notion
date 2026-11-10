@@ -1,7 +1,6 @@
 const NOTION_API_KEY = process.env.NOTION_API_KEY!;
 export const DATABASE_ID   = process.env.NOTION_DATABASE_ID!;
 export const RESOURCES_DB  = process.env.NOTION_RESOURCES_DB;
-export const HABITS_DB     = process.env.NOTION_HABITS_DB;
 export const TASKS_DB      = process.env.NOTION_TASKS_DB;
 export const SOCIAL_DB     = process.env.NOTION_SOCIAL_DB;
 export const PROJECTS_DB   = process.env.NOTION_PROJECTS_DB;
@@ -330,6 +329,7 @@ export async function createDeck(name: string): Promise<void> {
 }
 
 // ─── Habits ────────────────────────────────────────────────────────────────
+// Daily habit ticks are checkbox properties on each day's Journal page.
 
 export interface HabitKey { key: string; label: string }
 
@@ -340,21 +340,21 @@ export interface HabitsEntry {
 }
 
 async function getHabitKeys(): Promise<HabitKey[]> {
-  if (!HABITS_DB) return [];
+  if (!JOURNAL_DB) return [];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const schema = await notionFetch(`${BASE}/databases/${HABITS_DB}`);
+  const schema = await notionFetch(`${BASE}/databases/${JOURNAL_DB}`);
   return Object.entries(schema.properties as Record<string, { type: string }>)
     .filter(([, prop]) => prop.type === "checkbox")
     .map(([name]) => ({ key: name, label: name }));
 }
 
 export async function getTodayHabits(): Promise<HabitsEntry | null> {
-  if (!HABITS_DB) return null;
+  if (!JOURNAL_DB) return null;
   const today = new Date().toISOString().split("T")[0];
 
   const [habitKeys, data] = await Promise.all([
     getHabitKeys(),
-    notionFetch(`${BASE}/databases/${HABITS_DB}/query`, {
+    notionFetch(`${BASE}/databases/${JOURNAL_DB}/query`, {
       method: "POST",
       body: JSON.stringify({
         filter: { property: "Date", date: { equals: today } },
@@ -378,7 +378,7 @@ export async function getTodayHabits(): Promise<HabitsEntry | null> {
 }
 
 export async function createTodayHabits(): Promise<HabitsEntry | null> {
-  if (!HABITS_DB) return null;
+  if (!JOURNAL_DB) return null;
   const existing = await getTodayHabits();
   if (existing) return existing;
 
@@ -388,8 +388,11 @@ export async function createTodayHabits(): Promise<HabitsEntry | null> {
     notionFetch(`${BASE}/pages`, {
       method: "POST",
       body: JSON.stringify({
-        parent: { database_id: HABITS_DB },
-        properties: { Date: { date: { start: today } } },
+        parent: { database_id: JOURNAL_DB },
+        properties: {
+          Name: { title: [{ text: { content: today } }] },
+          Date: { date: { start: today } },
+        },
       }),
     }),
   ]);
@@ -403,7 +406,7 @@ export async function createTodayHabits(): Promise<HabitsEntry | null> {
 export async function toggleHabit(
   pageId: string, habitKey: string, checked: boolean
 ): Promise<void> {
-  if (!HABITS_DB) return;
+  if (!JOURNAL_DB) return;
   await notionFetch(`${BASE}/pages/${pageId}`, {
     method: "PATCH",
     body: JSON.stringify({
@@ -829,7 +832,6 @@ export async function getAllDatabases(): Promise<NotionDatabase[]> {
   const dbIds = [
     DATABASE_ID,
     RESOURCES_DB,
-    HABITS_DB,
     TASKS_DB,
     SOCIAL_DB,
     PROJECTS_DB,

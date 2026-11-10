@@ -24,13 +24,6 @@ const OPTIONAL = [
     value: process.env.NOTION_RESOURCES_DB,
   },
   {
-    key: "NOTION_HABITS_DB",
-    label: "Habits Database ID",
-    section: "Daily Habits",
-    hint: "A database with a Date property and one checkbox column per habit.",
-    value: process.env.NOTION_HABITS_DB,
-  },
-  {
     key: "NOTION_TASKS_DB",
     label: "Tasks Database ID",
     section: "Task Scheduler",
@@ -48,7 +41,7 @@ const OPTIONAL = [
     key: "NOTION_JOURNAL_DB",
     label: "Journal Database ID",
     section: "Journal",
-    hint: 'A database with a "Date" date property. One row = one journal entry.',
+    hint: 'A database with a "Date" date property and one checkbox column per daily habit. One row = one day.',
     value: process.env.NOTION_JOURNAL_DB,
   },
   {

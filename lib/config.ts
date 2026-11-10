@@ -12,7 +12,7 @@ export type SectionId = "flashcards" | OptionalSection;
 
 const SECTION_ENV: Record<OptionalSection, string | undefined> = {
   resources: process.env.NOTION_RESOURCES_DB,
-  habits:    process.env.NOTION_HABITS_DB,
+  habits:    process.env.NOTION_JOURNAL_DB,
   tasks:     process.env.NOTION_TASKS_DB,
   projects:  process.env.NOTION_PROJECTS_DB,
   social:    process.env.NOTION_SOCIAL_DB,

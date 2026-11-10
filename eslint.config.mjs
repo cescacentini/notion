@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Real dependency folder (node_modules links to it; see scripts/deps.sh):
+    "node_modules.nosync/**",
   ]),
 ]);
 

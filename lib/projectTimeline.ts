@@ -1,49 +1,31 @@
 import type { GoalOverview, Project, ProjectsOverview } from "@/lib/notion";
 
-export interface MonthBucket {
+export const WINDOW_MONTHS = 12;
+
+export interface TimelineMonth {
+  year: number;
   month: number;
   label: string;
-  isCurrent: boolean;
-  goals: GoalOverview[];
+}
+
+// A goal with the projects drawn under it; goal is null for projects without an open goal.
+export interface GoalGroup {
+  goal: GoalOverview | null;
   projects: Project[];
 }
 
-export interface QuarterBucket {
-  quarter: number;
-  label: string;
-  isCurrent: boolean;
-  goals: GoalOverview[];
+export interface GoalTimeline {
+  months: TimelineMonth[];
+  needsDate: { goals: GoalOverview[]; projects: Project[] };
+  groups: GoalGroup[];
+  undated: { goals: GoalOverview[]; projects: Project[] };
 }
 
-export interface YearTimeline {
-  goals: GoalOverview[];
-  quarters: QuarterBucket[];
-  months: MonthBucket[];
-  chartGoals: GoalOverview[];
-  chartProjects: Project[];
-  undatedGoals: GoalOverview[];
-  undatedProjects: Project[];
-}
-
-const MONTHS = [
-  "January", "February", "March", "April", "May", "June",
-  "July", "August", "September", "October", "November", "December",
-];
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 const yearOf = (date: string) => Number(date.slice(0, 4));
 const monthOf = (date: string) => Number(date.slice(5, 7));
 const quarterOf = (month: number) => Math.ceil(month / 3);
-const monthKey = (year: number, month: number) => `${year}-${String(month).padStart(2, "0")}`;
-
-function coversMonth(start: string | null, end: string | null, year: number, month: number) {
-  if (!start || !end) return false;
-  const key = monthKey(year, month);
-  return start.slice(0, 7) <= key && key <= end.slice(0, 7);
-}
-
-function coversYear(start: string | null, end: string | null, year: number) {
-  return !!start && !!end && yearOf(start) <= year && year <= yearOf(end);
-}
 
 function formatDay(date: string, withYear: boolean) {
   return new Date(date).toLocaleDateString("en-GB", {
@@ -74,64 +56,63 @@ export function activeProjects(overview: ProjectsOverview): Project[] {
   return [...byId.values()];
 }
 
-export function timelineYears(overview: ProjectsOverview, today: string) {
-  const counts = new Map<number, number>([[yearOf(today), 0]]);
-  const spans = [
-    ...overview.goals.map((goal) => [goal.startDate, goal.byWhen]),
-    ...activeProjects(overview).map((project) => [project.startDate, project.dueDate]),
-  ];
-  for (const [start, end] of spans) {
-    if (!start || !end) continue;
-    // A project that runs across years counts in each of them.
-    for (let year = yearOf(start); year <= yearOf(end); year++) {
-      counts.set(year, (counts.get(year) ?? 0) + 1);
-    }
-  }
-  return [...counts.entries()]
-    .map(([year, count]) => ({ year, count }))
-    .sort((a, b) => a.year - b.year);
+// Where a date sits across the window, from 0 (its first day) to 1 (past its last).
+// Months are equal-width columns, so a date is placed within its own month;
+// dayOffset says how far through the day to measure: 0 is its start, 1 its end.
+export function windowFraction(date: string, months: TimelineMonth[], dayOffset = 0) {
+  const year = yearOf(date);
+  const month = monthOf(date);
+  const index = (year - months[0].year) * 12 + (month - months[0].month);
+  if (index < 0) return 0;
+  if (index >= months.length) return 1;
+  const day = Number(date.slice(8, 10));
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return (index + (day - 1 + dayOffset) / daysInMonth) / months.length;
 }
 
-export function buildYearTimeline(overview: ProjectsOverview, year: number, today: string): YearTimeline {
-  const isCurrentYear = yearOf(today) === year;
-  const currentMonth = monthOf(today);
-  const goalsInYear = overview.goals.filter((goal) => coversYear(goal.startDate, goal.byWhen, year));
-  const projects = activeProjects(overview);
-  const projectsInYear = projects.filter((project) => coversYear(project.startDate, project.dueDate, year));
-  const monthGoals = goalsInYear.filter((goal) => goal.type !== "yearly" && goal.type !== "quaterly");
-
-  const months: MonthBucket[] = MONTHS.map((label, index) => {
-    const month = index + 1;
+export function buildGoalTimeline(overview: ProjectsOverview, today: string): GoalTimeline {
+  // The window starts at the current quarter and runs for a year.
+  const firstMonth = (quarterOf(monthOf(today)) - 1) * 3;
+  const months = Array.from({ length: WINDOW_MONTHS }, (_, i) => {
+    const offset = firstMonth + i;
     return {
-      month,
-      label,
-      isCurrent: isCurrentYear && month === currentMonth,
-      // Goals without a recognised type sit at the months of their date.
-      goals: monthGoals.filter((goal) => coversMonth(goal.startDate, goal.byWhen, year, month)),
-      projects: projectsInYear.filter((project) => coversMonth(project.startDate, project.dueDate, year, month)),
+      year: yearOf(today) + Math.floor(offset / 12),
+      month: (offset % 12) + 1,
+      label: MONTH_SHORT[offset % 12],
     };
   });
 
-  const quarters: QuarterBucket[] = [1, 2, 3, 4].map((quarter) => ({
-    quarter,
-    label: `Q${quarter}`,
-    isCurrent: isCurrentYear && quarter === quarterOf(currentMonth),
-    goals: goalsInYear.filter((goal) =>
-      goal.type === "quaterly" &&
-      [0, 1, 2].some((offset) => coversMonth(goal.startDate, goal.byWhen, year, (quarter - 1) * 3 + 1 + offset))
-    ),
-  }));
+  const isPast = (end: string | null) => end !== null && end.slice(0, 10) < today;
+  const onTimeline = (project: Project) => project.dueDate !== null && !isPast(project.dueDate);
+  const byStart = (a: Project, b: Project) =>
+    (a.startDate ?? a.dueDate ?? "").localeCompare(b.startDate ?? b.dueDate ?? "");
 
-  const byStart = (a: { startDate: string | null }, b: { startDate: string | null }) =>
-    (a.startDate ?? "").localeCompare(b.startDate ?? "");
+  // Goals arrive sorted by deadline. A project linked to several goals is drawn under the first.
+  const drawn = new Set<string>();
+  const groups: GoalGroup[] = [];
+  for (const goal of overview.goals) {
+    const projects = goal.activeProjects.filter((project) => onTimeline(project) && !drawn.has(project.id));
+    projects.forEach((project) => drawn.add(project.id));
+    // A goal that is undated or past its date only gets a row when it has projects to hold.
+    if ((!goal.byWhen || isPast(goal.byWhen)) && projects.length === 0) continue;
+    groups.push({ goal, projects: projects.sort(byStart) });
+  }
+  const withoutGoal = overview.withoutGoal.filter(onTimeline);
+  if (withoutGoal.length > 0) groups.push({ goal: null, projects: withoutGoal.sort(byStart) });
+
+  const grouped = new Set(groups.flatMap((group) => (group.goal ? [group.goal.id] : [])));
+  const projects = activeProjects(overview);
 
   return {
-    goals: goalsInYear.filter((goal) => goal.type === "yearly"),
-    quarters,
     months,
-    chartGoals: goalsInYear.filter((goal) => goal.type !== "yearly").sort(byStart),
-    chartProjects: [...projectsInYear].sort(byStart),
-    undatedGoals: overview.goals.filter((goal) => !goal.byWhen),
-    undatedProjects: projects.filter((project) => !project.dueDate),
+    needsDate: {
+      goals: overview.goals.filter((goal) => isPast(goal.byWhen)),
+      projects: projects.filter((project) => isPast(project.dueDate)),
+    },
+    groups,
+    undated: {
+      goals: overview.goals.filter((goal) => !goal.byWhen && !grouped.has(goal.id)),
+      projects: projects.filter((project) => !project.dueDate),
+    },
   };
 }

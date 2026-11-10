@@ -51,12 +51,14 @@ Copy the database ID from the URL — the 32-character string before the `?`.
 
 ```bash
 git clone https://github.com/YOUR_USERNAME/YOUR_REPO
-cd YOUR_REPO/notion_flashcard
+cd YOUR_REPO
 cp .env.local.example .env.local
 # Edit .env.local — add NOTION_API_KEY and NOTION_DATABASE_ID
-npm install
+npm run deps   # npm install, kept out of iCloud (see below)
 npm run dev
 ```
+
+If the project sits in an iCloud-synced folder (like the Desktop), iCloud can stall reads from `node_modules` and the dev server hangs. `npm run deps` installs into `node_modules.nosync`, which iCloud skips, and links `node_modules` to it. Install with it instead of plain `npm install`, which replaces the link.
 
 Open [http://localhost:3000](http://localhost:3000) — if env vars are missing the app will show setup instructions.
 
